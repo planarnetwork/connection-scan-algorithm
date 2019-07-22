@@ -9,7 +9,8 @@
     "lint-raw": "tslint --project tsconfig.json",
     "lint": "npm run lint-raw -- -t stylish",
     "coverage": "nyc --reporter=text npm test",
-    "start": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/cli.ts"
+    "start": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/cli.ts",
+    "perf": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/performance.ts"
   },
   "keywords": [
     "Journey",
