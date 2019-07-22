@@ -1,0 +1,7 @@
+node_modules/
+.idea/
+npm-debug.log
+src/
+tsconfig.json
+.travis.yml
+.nyc_output/
