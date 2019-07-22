@@ -19,7 +19,7 @@ async function main() {
   const query = new DepartAfterQuery(csa, new JourneyFactory(), [new MultipleCriteriaFilter()]);
 
   console.time("query");
-  const results = query.plan(["TBW"], ["HGS"], new Date(), 10 * 3600);
+  const results = query.plan(["TBW"], ["NRW"], new Date(), 9 * 3600);
   console.timeEnd("query");
 
   results.forEach(result => console.log(journeyToString(result)));
@@ -42,6 +42,5 @@ function toTime(time: number) {
 
   return hours + ":" + minutes + ":" + seconds;
 }
-
 
 main().catch(e => console.error(e));

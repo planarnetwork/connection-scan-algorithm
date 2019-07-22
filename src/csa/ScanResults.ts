@@ -22,7 +22,7 @@ export class ScanResults {
   }
 
   public isBetter(connection: TimetableConnection): boolean {
-    return !this.connectionIndex.hasOwnProperty(connection.destination)
+    return !this.earliestArrivals.hasOwnProperty(connection.destination)
       || this.earliestArrivals[connection.destination] > connection.arrivalTime;
   }
 
@@ -32,7 +32,7 @@ export class ScanResults {
   }
 
   public isTransferBetter(transfer: Transfer): boolean {
-    return !this.connectionIndex.hasOwnProperty(transfer.destination)
+    return !this.earliestArrivals.hasOwnProperty(transfer.destination)
       || this.earliestArrivals[transfer.destination] > this.getTransferArrivalTime(transfer);
   }
 
@@ -57,4 +57,3 @@ export class ScanResults {
     return this.connectionIndex;
   }
 }
-

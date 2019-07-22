@@ -15,6 +15,6 @@ export function isTransfer(connection: Connection | AnyLeg): connection is Trans
   return connection.hasOwnProperty("duration");
 }
 
-export function isChangeRequired(a: Connection, b: Connection) {
+export function isChangeRequired(a: Connection, b: Connection): boolean {
   return isTransfer(a) || isTransfer(b) || a.trip.tripId !== b.trip.tripId;
 }

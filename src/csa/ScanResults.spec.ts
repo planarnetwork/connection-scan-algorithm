@@ -6,6 +6,11 @@ import { Service } from "../gtfs/Service";
 import { Transfer } from "../journey/Journey";
 import { allDays } from "../gtfs/Service.spec";
 
+export const defaultInterchange = {
+  "A": 0,
+  "B": 0
+};
+
 describe("ScanResults", () => {
 
   it("knows if a connection is reachable", () => {
@@ -27,8 +32,8 @@ describe("ScanResults", () => {
   });
 
   it("knows if a connection is not reachable because of interchange", () => {
-    const connection1 = c("A", "B", 1000, 1015);
-    const connection2 = c("B", "C", 1030, 1100);
+    const connection1 = c("A", "B", 1000, 1015, "LN1111");
+    const connection2 = c("B", "C", 1030, 1100, "LN1112");
     const results = new ScanResults({ "A": 900 }, { "B": 100 });
 
     results.setConnection(connection1);
@@ -144,8 +149,3 @@ export function c(
 export function t(origin: TripID, destination: TripID, duration: Time): Transfer {
   return { origin, destination, duration, startTime: 0, endTime: 2359 };
 }
-
-export const defaultInterchange = {
-  "A": 0,
-  "B": 0
-};

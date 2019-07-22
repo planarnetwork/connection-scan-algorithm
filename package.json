@@ -4,9 +4,12 @@
   "description": "Connection Scan Algorithm",
   "main": "index.js",
   "scripts": {
-    "test": "mocha --require ts-node/register **/*.spec.ts",
+    "test": "npm run lint && mocha --require ts-node/register **/*.spec.ts",
+    "prepublishOnly": "rm -rf ./dist/ && tsc -p ./ --outDir dist/",
+    "lint-raw": "tslint --project tsconfig.json",
+    "lint": "npm run lint-raw -- -t stylish",
     "coverage": "nyc --reporter=text npm test",
-    "start": "NODE_OPTIONS='--max-old-space-size=4000' ts-node src/cli.ts"
+    "start": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/cli.ts"
   },
   "keywords": [
     "Journey",
@@ -19,23 +22,30 @@
   "devDependencies": {
     "@types/chai": "^4.1.7",
     "@types/mocha": "^5.2.7",
-    "@types/node": "^12.6.3",
+    "@types/node": "^12.6.8",
     "chai": "^4.2.0",
-    "mocha": "^6.1.4",
+    "mocha": "^6.2.0",
     "nyc": "^14.1.1",
     "ts-node": "^8.3.0",
+    "tslint": "^5.18.0",
     "typescript": "^3.5.3"
   },
   "dependencies": {
-    "gtfs-stream": "^2.0.8",
+    "gtfs-stream": "^2.0.9",
     "ts-array-utils": "^0.5.0"
   },
   "nyc": {
     "extends": "@istanbul/nyc-config-typescript",
     "all": true,
     "check-coverage": true,
-    "extension": [".ts"],
-    "include": ["src/**/*.ts"],
-    "exclude": ["src/cli.ts"]
+    "extension": [
+      ".ts"
+    ],
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "src/cli.ts"
+    ]
   }
 }

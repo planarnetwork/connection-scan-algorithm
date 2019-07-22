@@ -13,7 +13,7 @@ export class ScanResultsFactory {
   }
 
   public create(origins: OriginDepartureTimes): ScanResults {
-    return new ScanResults(origins, this.interchange);
+    return new ScanResults({ ...origins }, this.interchange);
   }
 
 }

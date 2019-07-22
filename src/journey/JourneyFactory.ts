@@ -115,7 +115,7 @@ export class JourneyFactory {
       arrivalTime: this.getArrivalTime(legs),
       departureTime: this.getDepartureTime(legs),
       legs: legs
-    }
+    };
   }
 
   private getDepartureTime(legs: AnyLeg[]): Time {

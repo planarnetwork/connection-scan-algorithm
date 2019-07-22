@@ -1,7 +1,7 @@
 import { Connection, TimetableConnection } from "../journey/Connection";
 import { TransfersByOrigin } from "../gtfs/GtfsLoader";
 import { DayOfWeek, StopID, Time } from "../gtfs/Gtfs";
-import { ScanResults} from "./ScanResults";
+import { ScanResults } from "./ScanResults";
 import { ScanResultsFactory } from "./ScanResultsFactory";
 
 /**
@@ -25,11 +25,11 @@ export class ConnectionScanAlgorithm {
       this.scanTransfers(results, origin);
     }
 
-    for (const connection of this.connections) {
-      if (connection.trip.service.runsOn(date, dow) && results.isReachable(connection) && results.isBetter(connection)) {
-        results.setConnection(connection);
+    for (const c of this.connections) {
+      if (c.trip.service.runsOn(date, dow) && results.isReachable(c) && results.isBetter(c)) {
+        results.setConnection(c);
         // don't trigger transfer scan if we already had a time for the destination
-        this.scanTransfers(results, connection.destination);
+        this.scanTransfers(results, c.destination);
       }
 
       // cut off after connection arrival time > arrival time at destinations

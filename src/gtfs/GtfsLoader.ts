@@ -3,7 +3,7 @@ import { pushNested, setNested } from "ts-array-utils";
 import { Readable } from "stream";
 import { TimeParser } from "./TimeParser";
 import { Service } from "./Service";
-import { CalendarIndex, StopID, StopIndex, Time, Trip } from "./Gtfs";
+import {CalendarIndex, StopID, StopIndex, StopTime, Time, Trip} from "./Gtfs";
 import { TimetableConnection } from "../journey/Connection";
 import { Transfer } from "..";
 
@@ -46,7 +46,7 @@ class StatefulGtfsLoader {
     private readonly timeParser: TimeParser
   ) {}
 
-  public link(row): void {
+  public link(row: any): void {
     const t = {
       origin: row.from_stop_id,
       destination: row.to_stop_id,
@@ -58,7 +58,7 @@ class StatefulGtfsLoader {
     pushNested(t, this.transfers, row.from_stop_id);
   }
 
-  public calendar(row): void {
+  public calendar(row: any): void {
     this.calendars[row.service_id] = {
       serviceId: row.service_id,
       startDate: +row.start_date,
@@ -77,15 +77,15 @@ class StatefulGtfsLoader {
     };
   }
 
-  public calendar_date(row): void {
+  public calendar_date(row: any): void {
     setNested(row.exception_type === "1", this.dates, row.service_id, row.date);
   }
 
-  public trip(row): void {
+  public trip(row: any): void {
     this.trips.push({ serviceId: row.service_id, tripId: row.trip_id, stopTimes: [], service: {} as any });
   }
 
-  public stop_time(row): void {
+  public stop_time(row: any): void {
     const stopTime = {
       stop: row.stop_id,
       departureTime: this.timeParser.getTime(row.departure_time),
@@ -97,7 +97,7 @@ class StatefulGtfsLoader {
     pushNested(stopTime, this.stopTimes, row.trip_id);
   }
 
-  public transfer(row): void {
+  public transfer(row: any): void {
     if (row.from_stop_id === row.to_stop_id) {
       this.interchange[row.from_stop_id] = +row.min_transfer_time;
     }
@@ -114,7 +114,7 @@ class StatefulGtfsLoader {
     }
   }
 
-  public stop(row): void {
+  public stop(row: any): void {
     const stop = {
       id: row.stop_id,
       code: row.stop_code,
@@ -140,31 +140,52 @@ class StatefulGtfsLoader {
       t.stopTimes = this.stopTimes[t.tripId];
       t.service = services[t.serviceId];
 
-      let origin = t.stopTimes[0].stop;
-      let departure = t.stopTimes[0].departureTime;
-      this.transfers[origin] = this.transfers[origin] || [];
-
-      for (let i = 1; i < t.stopTimes.length; i++) {
-        if (t.stopTimes[i].dropOff) {
-          connections.push({
-            origin: origin,
-            destination: t.stopTimes[i].stop,
-            departureTime: departure,
-            arrivalTime: t.stopTimes[i].arrivalTime,
-            trip: t
-          });
-
-          origin = t.stopTimes[i].stop;
-          this.transfers[origin] = this.transfers[origin] || [];
-        }
-      }
+      connections.push(...this.getConnectionsFromTrip(t));
     }
 
     connections.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
+    for (const stop of Object.keys(this.stops)) {
+      this.transfers[stop] = this.transfers[stop] || [];
+    }
+
     return { connections, transfers: this.transfers, interchange: this.interchange, stops: this.stops };
   }
 
+  private getConnectionsFromTrip(t: Trip): TimetableConnection[] {
+    const connections: TimetableConnection[] = [];
+
+    for (let i = 0; i < t.stopTimes.length - 1; i++) {
+      if (t.stopTimes[i].pickUp) {
+        const j = this.getNextDropOff(t.stopTimes, i);
+
+        if (j !== -1) {
+          connections.push({
+            origin: t.stopTimes[i].stop,
+            destination: t.stopTimes[j].stop,
+            departureTime: t.stopTimes[i].departureTime,
+            arrivalTime: t.stopTimes[j].arrivalTime,
+            trip: t
+          });
+        }
+      }
+    }
+
+    return connections;
+  }
+
+  /**
+   * Return the index of the first drop off point
+   */
+  private getNextDropOff(rows: StopTime[], i: number): number {
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j].dropOff) {
+        return j;
+      }
+    }
+
+    return -1;
+  }
 }
 
 /**

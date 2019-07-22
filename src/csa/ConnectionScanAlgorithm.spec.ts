@@ -116,12 +116,12 @@ describe("ConnectionScanAlgorithm", () => {
 
 export function setStopTimes(connections: TimetableConnection[]) {
   const stopTimes = connections
-    .map(c => ({
-      stop: c.origin,
+    .map(connection => ({
+      stop: connection.origin,
       pickUp: true,
       dropOff: true,
-      departureTime: c.departureTime,
-      arrivalTime: c.departureTime
+      departureTime: connection.departureTime,
+      arrivalTime: connection.departureTime
     }));
 
   stopTimes.push({
