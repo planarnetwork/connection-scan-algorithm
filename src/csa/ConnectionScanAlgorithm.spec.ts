@@ -19,7 +19,7 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, 20190101, 0);
+    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
     chai.expect(journey.origin).to.equal("A");
@@ -38,7 +38,7 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, 20190101, 0);
+    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
     const journeys = journeyResultsFactory.getJourneys(results, ["D"]);
 
     chai.expect(journeys.length).to.equal(0);
@@ -54,7 +54,7 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, 20190101, 0);
+    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
     const journeys = journeyResultsFactory.getJourneys(results, ["D"]);
 
     chai.expect(journeys.length).to.equal(0);
@@ -76,7 +76,7 @@ describe("ConnectionScanAlgorithm", () => {
     };
 
     const scanner = new ConnectionScanAlgorithm(timetable, transfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, 20190101, 0);
+    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
     chai.expect(journey.origin).to.equal("A");
@@ -102,7 +102,7 @@ describe("ConnectionScanAlgorithm", () => {
     };
 
     const scanner = new ConnectionScanAlgorithm(timetable, transfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, 20190101, 0);
+    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
     chai.expect(journey.origin).to.equal("A");

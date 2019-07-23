@@ -18,7 +18,7 @@ export class ConnectionScanAlgorithm {
   /**
    * Return an index of connections that achieve the earliest arrival time at each stop.
    */
-  public scan(origins: OriginDepartureTimes, date: number, dow: DayOfWeek): ConnectionIndex {
+  public scan(origins: OriginDepartureTimes, destinations: StopID[], date: number, dow: DayOfWeek): ConnectionIndex {
     const results = this.resultsFactory.create({ ...origins });
 
     for (const origin in origins) {
@@ -27,12 +27,15 @@ export class ConnectionScanAlgorithm {
 
     for (const c of this.connections) {
       if (c.trip.service.runsOn(date, dow) && results.isReachable(c) && results.isBetter(c)) {
-        results.setConnection(c);
-        // don't trigger transfer scan if we already had a time for the destination
-        this.scanTransfers(results, c.destination);
-      }
+        const newStopReached = results.setConnection(c);
 
-      // cut off after connection arrival time > arrival time at destinations
+        if (newStopReached) {
+          this.scanTransfers(results, c.destination);
+        }
+        if (results.isFinished(destinations, c.departureTime)) {
+          break;
+        }
+      }
     }
 
     return results.getConnectionIndex();
@@ -41,13 +44,15 @@ export class ConnectionScanAlgorithm {
   private scanTransfers(results: ScanResults, origin: StopID): void {
     for (const transfer of this.transfers[origin]) {
       if (results.isTransferBetter(transfer)) {
-        results.setTransfer(transfer);
+        const newStopReached = results.setTransfer(transfer);
 
-        // don't trigger transfer scan if we already had a time for the destination
-        this.scanTransfers(results, transfer.destination);
+        if (newStopReached) {
+          this.scanTransfers(results, transfer.destination);
+        }
       }
     }
   }
+
 }
 
 /**

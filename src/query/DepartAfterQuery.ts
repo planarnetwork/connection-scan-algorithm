@@ -24,7 +24,7 @@ export class DepartAfterQuery {
     const originTimes = origins.reduce(keyValue(origin => [origin, time]), {});
     const dateNumber = this.getDateNumber(date);
     const dayOfWeek = date.getDay() as DayOfWeek;
-    const results = this.csa.scan(originTimes, dateNumber, dayOfWeek);
+    const results = this.csa.scan(originTimes, destinations, dateNumber, dayOfWeek);
     const journeys = this.resultsFactory.getJourneys(results, destinations);
 
     // apply each filter to the results

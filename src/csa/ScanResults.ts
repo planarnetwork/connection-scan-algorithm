@@ -1,6 +1,6 @@
 import { Interchange } from "../gtfs/GtfsLoader";
-import { isChangeRequired, isTransfer, TimetableConnection } from "../journey/Connection";
-import { Time } from "../gtfs/Gtfs";
+import { isChangeRequired, TimetableConnection } from "../journey/Connection";
+import { StopID, Time } from "../gtfs/Gtfs";
 import { ConnectionIndex, OriginDepartureTimes } from "./ConnectionScanAlgorithm";
 import { Transfer } from "../journey/Journey";
 
@@ -12,8 +12,8 @@ export class ScanResults {
   private readonly connectionIndex: ConnectionIndex = {};
 
   constructor(
-    private readonly earliestArrivals: OriginDepartureTimes,
-    private readonly interchange: Interchange
+    private readonly interchange: Interchange,
+    private readonly earliestArrivals: OriginDepartureTimes
   ) {}
 
   public isReachable(connection: TimetableConnection): boolean {
@@ -26,9 +26,12 @@ export class ScanResults {
       || this.earliestArrivals[connection.destination] > connection.arrivalTime;
   }
 
-  public setConnection(connection: TimetableConnection): void {
+  public setConnection(connection: TimetableConnection): boolean {
+    const exists = this.connectionIndex.hasOwnProperty(connection.destination);
     this.earliestArrivals[connection.destination] = connection.arrivalTime;
     this.connectionIndex[connection.destination] = connection;
+
+    return !exists;
   }
 
   public isTransferBetter(transfer: Transfer): boolean {
@@ -36,9 +39,12 @@ export class ScanResults {
       || this.earliestArrivals[transfer.destination] > this.getTransferArrivalTime(transfer);
   }
 
-  public setTransfer(transfer: Transfer): void {
+  public setTransfer(transfer: Transfer): boolean {
+    const exists = this.connectionIndex.hasOwnProperty(transfer.destination);
     this.earliestArrivals[transfer.destination] = this.getTransferArrivalTime(transfer);
     this.connectionIndex[transfer.destination] = transfer;
+
+    return !exists;
   }
 
   private getTransferArrivalTime(transfer: Transfer): Time {
@@ -55,5 +61,9 @@ export class ScanResults {
 
   public getConnectionIndex(): ConnectionIndex {
     return this.connectionIndex;
+  }
+
+  public isFinished(destinations: StopID[], departureTime: Time): boolean {
+    return !destinations.some(d => !this.earliestArrivals[d] || departureTime < this.earliestArrivals[d]);
   }
 }

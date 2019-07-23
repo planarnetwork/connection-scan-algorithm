@@ -15,7 +15,7 @@ describe("ScanResults", () => {
 
   it("knows if a connection is reachable", () => {
     const connection = c("A", "B", 1000, 1015);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
     const actual = results.isReachable(connection);
     const expected = true;
 
@@ -24,7 +24,7 @@ describe("ScanResults", () => {
 
   it("knows if a connection is not reachable", () => {
     const connection = c("A", "B", 1000, 1015);
-    const results = new ScanResults({ "A": 1200 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 1200 });
     const actual = results.isReachable(connection);
     const expected = false;
 
@@ -34,7 +34,7 @@ describe("ScanResults", () => {
   it("knows if a connection is not reachable because of interchange", () => {
     const connection1 = c("A", "B", 1000, 1015, "LN1111");
     const connection2 = c("B", "C", 1030, 1100, "LN1112");
-    const results = new ScanResults({ "A": 900 }, { "B": 100 });
+    const results = new ScanResults({ "B": 100 }, { "A": 900 });
 
     results.setConnection(connection1);
 
@@ -47,7 +47,7 @@ describe("ScanResults", () => {
   it("knows if a connection is better", () => {
     const connection1 = c("A", "B", 1000, 1015);
     const connection2 = c("A", "B", 1000, 1010);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setConnection(connection1);
 
@@ -60,7 +60,7 @@ describe("ScanResults", () => {
   it("knows if a connection is not better", () => {
     const connection1 = c("A", "B", 1000, 1015);
     const connection2 = c("A", "B", 1000, 1030);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setConnection(connection1);
 
@@ -73,7 +73,7 @@ describe("ScanResults", () => {
   it("knows if a transfer is better", () => {
     const connection1 = c("A", "B", 1000, 1015);
     const connection2 = t("A", "B", 10);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setConnection(connection1);
 
@@ -86,7 +86,7 @@ describe("ScanResults", () => {
   it("knows if a transfer is not better", () => {
     const connection1 = c("A", "B", 1000, 1015);
     const connection2 = t("A", "B", 1000);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setConnection(connection1);
 
@@ -99,7 +99,7 @@ describe("ScanResults", () => {
   it("knows if a transfer is better than a transfer", () => {
     const connection1 = t("A", "B", 20);
     const connection2 = t("A", "B", 10);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setTransfer(connection1);
 
@@ -112,7 +112,7 @@ describe("ScanResults", () => {
   it("returns the connection index", () => {
     const connection1 = c("A", "B", 1000, 1015);
     const connection2 = t("B", "C", 10);
-    const results = new ScanResults({ "A": 900 }, defaultInterchange);
+    const results = new ScanResults(defaultInterchange, { "A": 900 });
 
     results.setConnection(connection1);
     results.setTransfer(connection2);
