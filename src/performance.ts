@@ -71,7 +71,7 @@ async function run() {
     console.timeEnd("initial load");
 
     const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-    const query = new DepartAfterQuery(csa, new JourneyFactory(), [new MultipleCriteriaFilter()]);
+    const query = new DepartAfterQuery(csa, new JourneyFactory());
 
     console.time("planning");
     const date = new Date();
