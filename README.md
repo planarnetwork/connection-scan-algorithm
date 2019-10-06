@@ -6,7 +6,7 @@ Connection Scan Algorithm
 Implementation of the [Connection Scan Algorithm](https://arxiv.org/pdf/1703.05997) in TypeScript.
 
 Additional features not in the paper implementation:
- - Various [fixes](https://ljn.io/posts/CSA-workarounds/) in order to improve the quality of results.
+ - Various [fixes](https://ljn.io/posts/CSA-workarounds) in order to improve the quality of results.
  - Calendars are checked to ensure services are running on the specified day
  - The origin and destination may be a set of stops
  - Interchange time at each station is applied
