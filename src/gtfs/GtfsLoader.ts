@@ -157,16 +157,23 @@ class StatefulGtfsLoader {
 
     for (let i = 0; i < t.stopTimes.length - 1; i++) {
       if (t.stopTimes[i].pickUp) {
-        const j = this.getNextDropOff(t.stopTimes, i);
+        // go through the stops adding connections until we have passed at least one pick up and drop off point
+        // need the check for pick up points as a stopping pattern A(p/d) -> B(d) -> C(p/d) would create connections
+        // A->B but not get you to C. This way we get A->B + A->C
+        for (let j = i + 1; j < t.stopTimes.length; j++) {
+          if (t.stopTimes[j].dropOff) {
+            connections.push({
+              origin: t.stopTimes[i].stop,
+              destination: t.stopTimes[j].stop,
+              departureTime: t.stopTimes[i].departureTime,
+              arrivalTime: t.stopTimes[j].arrivalTime,
+              trip: t
+            });
 
-        if (j !== -1) {
-          connections.push({
-            origin: t.stopTimes[i].stop,
-            destination: t.stopTimes[j].stop,
-            departureTime: t.stopTimes[i].departureTime,
-            arrivalTime: t.stopTimes[j].arrivalTime,
-            trip: t
-          });
+            if (t.stopTimes[j].pickUp) {
+              break;
+            }
+          }
         }
       }
     }
@@ -174,18 +181,6 @@ class StatefulGtfsLoader {
     return connections;
   }
 
-  /**
-   * Return the index of the first drop off point
-   */
-  private getNextDropOff(rows: StopTime[], i: number): number {
-    for (let j = i + 1; j < rows.length; j++) {
-      if (rows[j].dropOff) {
-        return j;
-      }
-    }
-
-    return -1;
-  }
 }
 
 /**

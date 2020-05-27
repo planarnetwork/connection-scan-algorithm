@@ -25,15 +25,10 @@ async function worker(filename: string, date: Date): Promise<void> {
     new JourneyFactory()
   );
 
-  process.on("message", stop => {
-    try {
-      const results = csa.getShortestPathTree(stop);
+  process.on("message", async stop => {
+    const results = csa.getShortestPathTree(stop);
 
-      repository.storeTransferPatterns(results);
-    }
-    catch (e) {
-      console.log(e);
-    }
+    await repository.storeTransferPatterns(results);
 
     morePlease();
   });

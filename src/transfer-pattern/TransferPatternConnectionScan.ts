@@ -36,14 +36,11 @@ export class TransferPatternConnectionScan {
       nextDepartureTime = Number.MAX_SAFE_INTEGER;
 
       for (const destination in arrivals) {
-        if (origin < destination) {
-          // maybe make a new method
-          const [journey] = this.journeyFactory.getJourneys(results.getConnectionIndex(), [destination]);
+        const [journey] = this.journeyFactory.getJourneys(results.getConnectionIndex(), [destination]);
 
-          if (journey && journey.legs.some(l => !isTransfer(l))) {
-            setNested(journey, bestJourneys, destination, "" + arrivals[destination]);
-            nextDepartureTime = Math.min(nextDepartureTime, journey.departureTime + 1);
-          }
+        if (journey && journey.legs.some(l => !isTransfer(l))) {
+          setNested(journey, bestJourneys, destination, "" + arrivals[destination]);
+          nextDepartureTime = Math.min(nextDepartureTime, journey.departureTime + 1);
         }
       }
     }

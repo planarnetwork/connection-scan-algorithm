@@ -17,21 +17,34 @@ export class TransferPatternRepository {
 
     for (const destination of Object.keys(patterns)) {
       for (const journey of Object.values(patterns[destination])) {
-        const pattern = journey.legs.map(l => l.origin).join(",").substr(4);
-        const key = journey.origin + journey.destination;
+        const stops = journey.legs.slice(1).map(l => l.origin);
+        const pattern = journey.origin > journey.destination ? stops.reverse().join(",") : stops.join(",");
+        const key = journey.origin > journey.destination
+            ? journey.destination + journey.origin
+            : journey.origin + journey.destination;
 
         journeys.push([key, pattern]);
       }
     }
 
     if (journeys.length > 0) {
-      try {
-        await this.db.query("INSERT IGNORE INTO transfer_patterns VALUES ?", [journeys]);
+      await this.retryQuery("INSERT IGNORE INTO transfer_patterns VALUES ?", [journeys]);
+    }
+  }
+
+  private async retryQuery(sql: string, data: any[], numRetries: number = 3) {
+    try {
+      await this.db.query(sql, data);
+    }
+    catch (err) {
+      if (numRetries > 0) {
+        await this.retryQuery(sql, data, numRetries - 1);
       }
-      catch (err) {
+      else {
         console.error(err);
       }
     }
+
   }
 
   /**
