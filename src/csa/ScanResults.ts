@@ -1,5 +1,5 @@
 import { Interchange } from "../gtfs/GtfsLoader";
-import { isChangeRequired, TimetableConnection } from "../journey/Connection";
+import { TimetableConnection } from "../journey/Connection";
 import { StopID, Time } from "../gtfs/Gtfs";
 import { ConnectionIndex, OriginDepartureTimes } from "./ConnectionScanAlgorithm";
 import { Transfer } from "../journey/Journey";
@@ -10,6 +10,7 @@ import { Transfer } from "../journey/Journey";
  */
 export class ScanResults {
   private readonly connectionIndex: ConnectionIndex = {};
+  private readonly tripArrivals: Record<number, ConnectionIndex> = {};
 
   constructor(
     private readonly interchange: Interchange,
@@ -17,8 +18,26 @@ export class ScanResults {
   ) {}
 
   public isReachable(connection: TimetableConnection): boolean {
+    const reachable = this.isReachableWithChange(connection) || this.isReachableFromSameService(connection);
+
+    if (reachable) {
+      this.tripArrivals[connection.trip.tripId] = this.tripArrivals[connection.trip.tripId] || {};
+      this.tripArrivals[connection.trip.tripId][connection.destination] = connection.arrivalTime;
+    }
+
+    return reachable;
+  }
+
+  private isReachableWithChange(connection: TimetableConnection): boolean {
+    return this.tripArrivals.hasOwnProperty(connection.trip.tripId) &&
+      this.tripArrivals[connection.trip.tripId][connection.origin] <= connection.departureTime;
+  }
+
+  private isReachableFromSameService(connection: TimetableConnection): boolean {
+    const interchange = this.connectionIndex[connection.origin] ? this.interchange[connection.origin] : 0;
+
     return this.earliestArrivals.hasOwnProperty(connection.origin)
-      && this.earliestArrivals[connection.origin] + this.getInterchange(connection) <= connection.departureTime;
+      && this.earliestArrivals[connection.origin] + interchange <= connection.departureTime;
   }
 
   public isBetter(connection: TimetableConnection): boolean {
@@ -49,14 +68,6 @@ export class ScanResults {
 
   private getTransferArrivalTime(transfer: Transfer): Time {
     return this.earliestArrivals[transfer.origin] + transfer.duration + this.interchange[transfer.origin];
-  }
-
-  private getInterchange(connection: TimetableConnection): Time {
-    // maybe fake a trip ID
-    const requiresInterchange = this.connectionIndex.hasOwnProperty(connection.origin)
-      && isChangeRequired(this.connectionIndex[connection.origin], connection);
-
-    return requiresInterchange ? this.interchange[connection.origin] : 0;
   }
 
   public getConnectionIndex(): ConnectionIndex {
