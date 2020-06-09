@@ -6,8 +6,8 @@ import { StopID } from "./gtfs/Gtfs";
 
 const numCPUs = require("os").cpus().length;
 
-async function run(filename: string) {
-  const date = new Date("2020-05-29");
+async function run(filename: string, dateString: string) {
+  const date = new Date(dateString);
   console.time("load stops");
   const stops = await getStops(filename);
   console.timeEnd("load stops");
@@ -45,9 +45,9 @@ async function getStops(filename: string): Promise<StopID[]> {
   });
 }
 
-if (process.argv[2]) {
-  run(process.argv[2]).catch(e => console.error(e));
+if (process.argv[2] && process.argv[3]) {
+  run(process.argv[2], process.argv[3]).catch(e => console.error(e));
 }
 else {
-  console.log("Please specify a GTFS file.");
+  console.log("Please specify a GTFS file and date.");
 }

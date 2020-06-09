@@ -7,6 +7,7 @@ import {
   StopID,
   Time,
   TimetableConnection,
+  toTime,
   TransfersByOrigin
 } from "..";
 import { setNested } from "ts-array-utils";
@@ -60,7 +61,6 @@ export class TransferPatternConnectionScan {
 
     for (const c of connections) {
 
-      // maybe just store an index?
       if (c.departureTime > departure) {
         newTimetable.push(c);
       }
