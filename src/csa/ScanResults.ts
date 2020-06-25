@@ -28,12 +28,12 @@ export class ScanResults {
     return reachable;
   }
 
-  private isReachableWithChange(connection: TimetableConnection): boolean {
+  private isReachableFromSameService(connection: TimetableConnection): boolean {
     return this.tripArrivals.hasOwnProperty(connection.trip.tripId) &&
       this.tripArrivals[connection.trip.tripId][connection.origin] <= connection.departureTime;
   }
 
-  private isReachableFromSameService(connection: TimetableConnection): boolean {
+  private isReachableWithChange(connection: TimetableConnection): boolean {
     const interchange = this.connectionIndex[connection.origin] ? this.interchange[connection.origin] : 0;
 
     return this.earliestArrivals.hasOwnProperty(connection.origin)

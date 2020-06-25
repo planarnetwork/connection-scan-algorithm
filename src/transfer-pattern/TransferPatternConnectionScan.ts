@@ -7,7 +7,6 @@ import {
   StopID,
   Time,
   TimetableConnection,
-  toTime,
   TransfersByOrigin
 } from "..";
 import { setNested } from "ts-array-utils";
