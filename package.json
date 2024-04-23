@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "gtfs-stream": "^2.1.0",
-    "mysql2": "^2.1.0",
+    "mysql2": "^3.9.7",
     "progress": "^2.0.3",
     "ts-array-utils": "^0.5.0"
   },
