@@ -1,25 +1,11 @@
-import { type GTFSFeed, Service, type ServiceCalendar, type StopTime, type Trip } from "@gb-transit/gtfs-loader";
+import { type GTFSFeed, Service, type ServiceCalendar } from "@gb-transit/gtfs-loader";
 import { describe, expect, it } from "vitest";
-import { ConnectionScanAlgorithm } from "../../../src/csa/ConnectionScanAlgorithm.js";
-import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
-import { toGtfsData } from "../../../src/gtfs/GtfsLoader.js";
 import type { TimetableLeg } from "../../../src/journey/Journey.js";
-import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
-import { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
-import { MultipleCriteriaFilter } from "../../../src/query/MultipleCriteriaFilter.js";
-import { allDays, everyDay, feed, st } from "../util.js";
-
-const TUESDAY = new Date("2026-09-08T09:00:00");
-
-function trip(tripId: string, stopTimes: StopTime[], service: ServiceCalendar = everyDay): Trip {
-  return { tripId, serviceId: tripId, service, stopTimes };
-}
+import type { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
+import { allDays, gtfsOf, platforms, queryOver, st, trip, TUESDAY } from "../util.js";
 
 function query(overrides: Partial<GTFSFeed>): DepartAfterQuery {
-  const gtfs = toGtfsData(feed(overrides));
-  const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-
-  return new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+  return queryOver(gtfsOf({ stops: platforms, ...overrides }));
 }
 
 function tripsOf(legs: unknown[]): string[] {

@@ -1,25 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ScanResults } from "../../../src/csa/ScanResults.js";
-import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
 import type { TimetableLeg } from "../../../src/journey/Journey.js";
-import { c, setStopTimes, st, t } from "../util.js";
+import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
+import { byOrigin, connection, gtfsOf, legsOf, platforms, resultsFor, st, transfer, trip, walk } from "../util.js";
 
 describe("JourneyFactory", () => {
-  const factory = new JourneyFactory(new Map());
 
   it("creates a journey from a connection index", () => {
-    const results = new ScanResults({ A: 1000 }, {});
-    const connections = [
-      c("A", "B", 1000, 1030)
-    ];
+    const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1030)])] });
+    const results = resultsFor(gtfs, { A: 1000 });
 
-    setStopTimes(connections);
+    results.setConnection(connection(gtfs, "1", "A", "B"));
 
-    for (const connection of connections) {
-      results.setConnection(connection);
-    }
-
-    const [journey] = factory.getJourneys(results.getConnectionIndex(), ["B"]);
+    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["B"]);
 
     expect(journey.origin).toBe("A");
     expect(journey.destination).toBe("B");
@@ -27,83 +19,75 @@ describe("JourneyFactory", () => {
     expect(journey.arrivalTime).toBe(1030);
   });
 
+  it("returns no journey to a destination that was not reached or the feed does not have", () => {
+    const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1030)])] });
+    const results = resultsFor(gtfs, { A: 1000 });
+
+    expect(new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["B", "Z"])).toEqual([]);
+  });
+
   it("calculates the departure time", () => {
-    const results = new ScanResults({ A: 1000 }, {});
-    const connections = [
-      c("B", "C", 1100, 1130)
-    ];
+    const gtfs = gtfsOf({
+      trips: [trip("1", [st("B", 1100), st("C", 1130)])],
+      transfers: byOrigin(walk("A", "B", 60))
+    });
+    const results = resultsFor(gtfs, { A: 1000 });
 
-    setStopTimes(connections);
-    results.setTransfer(t("A", "B", 60));
+    results.setTransfer(transfer(gtfs, "A", "B"));
+    results.setConnection(connection(gtfs, "1", "B", "C"));
 
-    for (const connection of connections) {
-      results.setConnection(connection);
-    }
+    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["C"]);
 
-    const [journey] = factory.getJourneys(results.getConnectionIndex(), ["C"]);
-
-    expect(journey.origin).toBe("A");
-    expect(journey.destination).toBe("C");
+    expect(legsOf(journey)).toEqual(["walk:A-B", "1:B-C"]);
     expect(journey.departureTime).toBe(1040);
     expect(journey.arrivalTime).toBe(1130);
   });
 
   it("calculates the arrival time", () => {
-    const results = new ScanResults({ A: 1000 }, {});
-    const connections = [
-      c("B", "C", 1100, 1130)
-    ];
+    const gtfs = gtfsOf({
+      trips: [trip("1", [st("B", 1100), st("C", 1130)])],
+      transfers: byOrigin(walk("A", "B", 60), walk("C", "D", 60))
+    });
+    const results = resultsFor(gtfs, { A: 1000 });
 
-    setStopTimes(connections);
-    results.setTransfer(t("A", "B", 60));
-    results.setTransfer(t("C", "D", 60));
+    results.setTransfer(transfer(gtfs, "A", "B"));
+    results.setConnection(connection(gtfs, "1", "B", "C"));
+    results.setTransfer(transfer(gtfs, "C", "D"));
 
-    for (const connection of connections) {
-      results.setConnection(connection);
-    }
+    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["D"]);
 
-    const [journey] = factory.getJourneys(results.getConnectionIndex(), ["D"]);
-
-    expect(journey.origin).toBe("A");
-    expect(journey.destination).toBe("D");
+    expect(legsOf(journey)).toEqual(["walk:A-B", "1:B-C", "walk:C-D"]);
     expect(journey.departureTime).toBe(1040);
     expect(journey.arrivalTime).toBe(1190);
   });
 
   it("removes pointless legs", () => {
-    const results = new ScanResults({ A: 1000 }, {});
-    const connections = [
-      c("A", "B", 1000, 1010, "LN1111"),
-      c("B", "C", 1010, 1020, "LN1112"),
-      c("C", "D", 1020, 1030, "LN1113"),
-      c("D", "E", 1030, 1040, "LN1114")
-    ];
-    const stopTimes = [st("A", 1000), st("B", 1010), st("C", 1020), st("D", 1030), st("E", 1040)];
+    const calls = [st("A", 1000), st("B", 1010), st("C", 1020), st("D", 1030), st("E", 1040)];
+    const gtfs = gtfsOf({
+      trips: [trip("LN1111", calls), trip("LN1112", calls), trip("LN1113", calls), trip("LN1114", calls)]
+    });
+    const results = resultsFor(gtfs, { A: 1000 });
 
-    for (const connection of connections) {
-      connection.trip.stopTimes = stopTimes;
-      results.setConnection(connection);
-    }
+    results.setConnection(connection(gtfs, "LN1111", "A", "B"));
+    results.setConnection(connection(gtfs, "LN1112", "B", "C"));
+    results.setConnection(connection(gtfs, "LN1113", "C", "D"));
+    results.setConnection(connection(gtfs, "LN1114", "D", "E"));
 
-    const [journey] = factory.getJourneys(results.getConnectionIndex(), ["E"]);
+    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["E"]);
 
-    expect(journey.origin).toBe("A");
-    expect(journey.destination).toBe("E");
+    expect(legsOf(journey)).toEqual(["LN1114:A-E"]);
     expect(journey.departureTime).toBe(1000);
     expect(journey.arrivalTime).toBe(1040);
-    expect(journey.legs.length).toBe(1);
   });
 
-  it("cuts a leg from the trip by the station each platform belongs to, leaving out passing points", () => {
-    const stations = new Map([["NRW1", "NRW"], ["DIS2", "DIS"], ["LST8", "LST"]]);
-    const results = new ScanResults({}, { NRW: 900 });
-    const connection = c("NRW", "LST", 1000, 1200);
+  it("names the platforms a leg uses and leaves out the points it passes through", () => {
     const passing = { ...st("DIS2", 1100), pickUp: false, dropOff: false };
+    const gtfs = gtfsOf({ stops: platforms, trips: [trip("1", [st("NRW1", 1000), passing, st("LST8", 1200)])] });
+    const results = resultsFor(gtfs, { NRW: 900 });
 
-    connection.trip.stopTimes = [st("NRW1", 1000), passing, st("LST8", 1200)];
-    results.setConnection(connection);
+    results.setConnection(connection(gtfs, "1", "NRW", "LST"));
 
-    const [journey] = new JourneyFactory(stations).getJourneys(results.getConnectionIndex(), ["LST"]);
+    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["LST"]);
     const leg = journey.legs[0] as TimetableLeg;
 
     expect(leg.origin).toBe("NRW");

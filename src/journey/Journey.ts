@@ -41,6 +41,10 @@ export interface Transfer extends Leg {
   endTime: Time;
 }
 
+export function isTransfer(leg: AnyLeg): leg is Transfer {
+  return "duration" in leg;
+}
+
 export function journeyToString(j: Journey): string {
   return `${toTime(j.departureTime)}, ${toTime(j.arrivalTime)}, ${[j.legs[0].origin, ...j.legs.map(l => l.destination)].join("-")}`;
 }

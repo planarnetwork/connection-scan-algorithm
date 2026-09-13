@@ -44,10 +44,22 @@ const {
 const gtfs = await loadGtfs(fs.createReadStream("gtfs.zip"));
 // or toGtfsData(feed) if you already have a feed from @gb-transit/gtfs-loader
 
-const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs), [new MultipleCriteriaFilter()]);
 const results = query.plan(["TBW"], ["NRW"], new Date(), 9 * 3600);
 ```
+
+### How a scan reads the timetable
+
+The algorithm is the paper's: connections sorted by arrival, read in order, each one taken if it can
+be reached and gets somewhere sooner. What makes it quick is what it reads.
+
+`toGtfsData` numbers the stations, and holds the connections as parallel arrays of those numbers and
+times rather than as an object each. `ScanResults` keeps its earliest arrivals and the connection
+achieving each in arrays indexed by station, and a connection or footpath is its index, so every
+question the scan asks is a few array reads. A scan starts at the first connection arriving after the
+departure time and stops once every destination has been reached before the connection it is on
+arrives, and whether each trip runs is worked out once per date rather than asked of every connection.
 
 ### Stations and platforms
 
@@ -55,7 +67,8 @@ A connection runs between stations, because that is where interchange time and f
 defined and the only place a change of train is possible. A stop that gives a `parent_station` is
 read as belonging to it, and a station is named by its `stop_code` where it has one, so that is what
 queries are made with and journeys are returned in. `gtfs.stations` maps every feed stop id to the
-station it belongs to, which is what `JourneyFactory` needs to cut a leg out of its trip.
+station it belongs to, which is what `JourneyFactory` needs to cut a leg out of its trip, and
+`gtfs.stopTable` numbers the stations.
 
 The stop times of a leg are the feed's own, so a leg between two stations still says which platform
 it uses at each end. A call the vehicle only passes through is not somewhere a journey can start or

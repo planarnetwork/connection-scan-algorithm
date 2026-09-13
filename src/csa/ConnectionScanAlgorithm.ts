@@ -1,6 +1,8 @@
 import type { DateNumber, DayOfWeek, StopID, Time } from "@gb-transit/gtfs-loader";
-import type { TransfersByOrigin } from "../gtfs/GtfsLoader.js";
-import type { Connection, TimetableConnection } from "../journey/Connection.js";
+import { type Connections, firstArrivingAt } from "../gtfs/Connections.js";
+import type { GtfsData, Transfers } from "../gtfs/GtfsLoader.js";
+import type { StopIdx } from "../gtfs/StopTable.js";
+import type { TripCalendar } from "../gtfs/TripCalendar.js";
 import type { ScanResults } from "./ScanResults.js";
 import type { ScanResultsFactory } from "./ScanResultsFactory.js";
 
@@ -8,15 +10,21 @@ import type { ScanResultsFactory } from "./ScanResultsFactory.js";
  * Implementation of the connection scan algorithm.
  */
 export class ConnectionScanAlgorithm {
+  private readonly connections: Connections;
+  private readonly transfers: Transfers;
+  private readonly calendar: TripCalendar;
 
   constructor(
-    private readonly connections: TimetableConnection[],
-    private readonly transfers: TransfersByOrigin,
+    gtfs: GtfsData,
     private readonly resultsFactory: ScanResultsFactory
-  ) {}
+  ) {
+    this.connections = gtfs.connections;
+    this.transfers = gtfs.transfers;
+    this.calendar = gtfs.calendar;
+  }
 
   /**
-   * Return an index of connections that achieve the earliest arrival time at each stop.
+   * Return an index of connections that achieve the earliest arrival time at each station.
    */
   public scan(
     origins: OriginDepartureTimes,
@@ -24,19 +32,21 @@ export class ConnectionScanAlgorithm {
     date: DateNumber,
     dow: DayOfWeek
   ): ConnectionIndex {
-    const results = this.resultsFactory.create({ ...origins });
+    const results = this.resultsFactory.create(origins, destinations);
+    const running = this.calendar.runningOn(date, dow);
+    const departureTime = Math.min(...Object.values(origins));
 
-    for (const origin in origins) {
+    for (const origin of results.getOrigins()) {
       this.scanTransfers(results, origin);
     }
 
-    for (const c of this.connections) {
-      if (c.trip.service.runsOn(date, dow) && results.isReachable(c) && results.isBetter(c)) {
+    for (let c = firstArrivingAt(this.connections, departureTime); c < this.connections.length; c++) {
+      if (results.isFinished(c)) {
+        break;
+      }
+      if (running[this.connections.trip[c]] && results.isReachable(c) && results.isBetter(c)) {
         if (results.setConnection(c)) {
-          this.scanTransfers(results, c.destination);
-        }
-        if (results.isFinished(destinations, c.departureTime)) {
-          break;
+          this.scanTransfers(results, this.connections.arrivalStation[c]);
         }
       }
     }
@@ -49,11 +59,11 @@ export class ConnectionScanAlgorithm {
    * first time: a station first reached on foot is often then reached sooner by train, and the
    * footpaths onwards from it have to start from the earlier time.
    */
-  private scanTransfers(results: ScanResults, origin: StopID): void {
-    for (const transfer of this.transfers[origin] ?? []) {
-      if (results.isTransferBetter(transfer)) {
-        results.setTransfer(transfer);
-        this.scanTransfers(results, transfer.destination);
+  private scanTransfers(results: ScanResults, origin: StopIdx): void {
+    for (let t = this.transfers.offsets[origin]; t < this.transfers.offsets[origin + 1]; t++) {
+      if (results.isTransferBetter(t)) {
+        results.setTransfer(t);
+        this.scanTransfers(results, this.transfers.destination[t]);
       }
     }
   }
@@ -61,9 +71,10 @@ export class ConnectionScanAlgorithm {
 }
 
 /**
- * Index of connections that achieve the earliest arrivalTime time at each stop.
+ * The connection or footpath that achieves the earliest arrival at each station, by station index,
+ * or NO_CONNECTION where nothing does.
  */
-export type ConnectionIndex = Record<StopID, Connection>;
+export type ConnectionIndex = Int32Array;
 
 /**
  * Index of departure stations and their departure time

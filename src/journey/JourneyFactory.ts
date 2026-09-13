@@ -1,7 +1,9 @@
 import { isCall, type StopID, type StopTime, type Time, type Trip } from "@gb-transit/gtfs-loader";
 import type { ConnectionIndex } from "../csa/ConnectionScanAlgorithm.js";
-import { type Connection, isChangeRequired, isTransfer } from "./Connection.js";
-import type { AnyLeg, Journey } from "./Journey.js";
+import type { GtfsData } from "../gtfs/GtfsLoader.js";
+import { UNKNOWN_STOP } from "../gtfs/StopTable.js";
+import { type Connection, isChangeRequired, isTransferConnection, NO_CONNECTION, transferOf } from "./Connection.js";
+import { type AnyLeg, isTransfer, type Journey } from "./Journey.js";
 
 /**
  * Creates journeys from the connection index created by the connection scan algorithm.
@@ -9,12 +11,11 @@ import type { AnyLeg, Journey } from "./Journey.js";
 export class JourneyFactory {
 
   /**
-   * The stations are the feed's stop ids to the station each belongs to, as `GtfsData` gives them.
    * Connections run between stations while a trip's stop times name platforms, so a leg is cut from
    * its trip by asking which station each call is at.
    */
   constructor(
-    private readonly stations: Map<StopID, StopID>
+    private readonly gtfs: GtfsData
   ) {}
 
   /**
@@ -34,19 +35,22 @@ export class JourneyFactory {
   private getLegs(connections: ConnectionIndex, destination: StopID): AnyLeg[] | null {
     const legs: Connection[][] = [];
     let legConnections: Connection[] = [];
-    let previousConnection: Connection | null = null;
+    let previousConnection: Connection = NO_CONNECTION;
+    let station = this.gtfs.stopTable.indexOf(destination);
 
-    while (connections[destination]) {
-      const connection = connections[destination];
+    while (station !== UNKNOWN_STOP && connections[station] !== NO_CONNECTION) {
+      const connection = connections[station];
 
-      if (previousConnection && isChangeRequired(previousConnection, connection)) {
+      if (previousConnection !== NO_CONNECTION && isChangeRequired(this.gtfs.connections, previousConnection, connection)) {
         legs.push(legConnections.reverse());
         legConnections = [];
       }
 
       legConnections.push(connection);
       previousConnection = connection;
-      destination = connection.origin;
+      station = isTransferConnection(connection)
+        ? this.gtfs.transfers.origin[transferOf(connection)]
+        : this.gtfs.connections.departureStation[connection];
     }
 
     legs.push(legConnections.reverse());
@@ -58,16 +62,17 @@ export class JourneyFactory {
    * Convert a list of connections into a Transfer or a TimetableLeg
    */
   private toLeg(cs: Connection[]): AnyLeg {
+    const { connections, stopTable, transfers, trips } = this.gtfs;
     const firstConnection = cs[0];
 
-    if (isTransfer(firstConnection)) {
-      return firstConnection;
+    if (isTransferConnection(firstConnection)) {
+      return transfers.transfer[transferOf(firstConnection)];
     }
     else {
-      const origin = firstConnection.origin;
-      const destination = cs[cs.length - 1].destination;
-      const trip = firstConnection.trip;
-      const stopTimes = this.getStopTimes(trip, origin, firstConnection.departureTime, destination);
+      const origin = stopTable.nameOf(connections.departureStation[firstConnection]);
+      const destination = stopTable.nameOf(connections.arrivalStation[cs[cs.length - 1]]);
+      const trip = trips[connections.trip[firstConnection]];
+      const stopTimes = this.getStopTimes(trip, origin, connections.departureTime[firstConnection], destination);
 
       return { origin, destination, trip, stopTimes: stopTimes || [] };
     }
@@ -123,7 +128,7 @@ export class JourneyFactory {
   }
 
   private stationOf(stopTime: StopTime): StopID {
-    return this.stations.get(stopTime.stop) ?? stopTime.stop;
+    return this.gtfs.stations.get(stopTime.stop) ?? stopTime.stop;
   }
 
   private getJourney(legs: AnyLeg[]): Journey {

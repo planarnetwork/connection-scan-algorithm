@@ -18,8 +18,8 @@ async function run() {
   const gtfs = await loadGtfs(fs.createReadStream(filename));
   console.timeEnd("initial load");
 
-  const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-  const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+  const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+  const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs), [new MultipleCriteriaFilter()]);
 
   console.time("query");
   const results = query.plan(origins, destinations, new Date(), time);

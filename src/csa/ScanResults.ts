@@ -1,50 +1,109 @@
-import type { Interchange, StopID, Time, TripID } from "@gb-transit/gtfs-loader";
-import { isChangeRequired, type TimetableConnection } from "../journey/Connection.js";
-import type { Transfer } from "../journey/Journey.js";
+import type { StopID, Time } from "@gb-transit/gtfs-loader";
+import type { Connections } from "../gtfs/Connections.js";
+import type { GtfsData, Transfers } from "../gtfs/GtfsLoader.js";
+import { type StopIdx, UNKNOWN_STOP } from "../gtfs/StopTable.js";
+import { type Connection, isChangeRequired, NO_CONNECTION, transferConnection } from "../journey/Connection.js";
 import type { ConnectionIndex, OriginDepartureTimes } from "./ConnectionScanAlgorithm.js";
+
+/**
+ * Arrival time of a station that has not been reached. Larger than any real time, so it loses every
+ * `<` comparison without needing a special case.
+ */
+export const NOT_REACHED = 0x7fffffff;
+
+/** The trip has carried the passenger to none of its calls */
+export const NOT_CARRIED = 0x7fffffff;
 
 /**
  * Mutable object that stores the current earliest arrival and best connection indexes as the
  * connections are being scanned.
+ *
+ * Stations are held by index, and connections and footpaths by their index into the feed's, so
+ * every question the scan asks of this is a few array reads.
  */
 export class ScanResults {
-  private readonly connectionIndex: ConnectionIndex = {};
-  private readonly tripArrivals: Record<TripID, Record<StopID, Time>> = {};
+  private readonly connections: Connections;
+  private readonly transfers: Transfers;
+  private readonly interchange: Int32Array;
+  private readonly earliestArrivals: Int32Array;
+  private readonly connectionIndex: ConnectionIndex;
+  private readonly origins: StopIdx[] = [];
+  private readonly destinations: StopIdx[] = [];
+  private readonly isDestination: Uint8Array;
+  private latestDestinationArrival: Time;
 
+  /**
+   * The trip arrivals are the earliest call each trip has carried the passenger to. They are only
+   * needed while the scan runs, so the factory gives every scan the same array.
+   */
   constructor(
-    private readonly interchange: Interchange,
-    private readonly earliestArrivals: OriginDepartureTimes
-  ) {}
+    gtfs: GtfsData,
+    origins: OriginDepartureTimes,
+    destinations: StopID[],
+    private readonly tripArrivals: Int32Array
+  ) {
+    this.connections = gtfs.connections;
+    this.transfers = gtfs.transfers;
+    this.interchange = gtfs.interchange;
+    this.earliestArrivals = new Int32Array(gtfs.stopTable.size).fill(NOT_REACHED);
+    this.connectionIndex = new Int32Array(gtfs.stopTable.size).fill(NO_CONNECTION);
+    this.isDestination = new Uint8Array(gtfs.stopTable.size);
 
-  public isReachable(connection: TimetableConnection): boolean {
-    const reachable = this.isReachableWithChange(connection) || this.isReachableFromSameService(connection);
+    for (const code of Object.keys(origins)) {
+      const origin = gtfs.stopTable.indexOf(code);
+
+      if (origin !== UNKNOWN_STOP) {
+        this.origins.push(origin);
+        this.earliestArrivals[origin] = origins[code];
+      }
+    }
+
+    // a destination the feed does not have is one nothing can be waited for at
+    for (const code of destinations) {
+      const destination = gtfs.stopTable.indexOf(code);
+
+      if (destination !== UNKNOWN_STOP) {
+        this.destinations.push(destination);
+        this.isDestination[destination] = 1;
+      }
+    }
+
+    this.latestDestinationArrival = this.getLatestDestinationArrival();
+  }
+
+  /**
+   * Once a trip has carried the passenger to a call, they are still aboard for any of its
+   * connections from there on. Boarding it is not the same: a trip only picking up at a later call
+   * has carried nobody to it.
+   */
+  public isReachable(c: Connection): boolean {
+    const reachable = this.isReachableWithChange(c) || this.isReachableFromSameService(c);
 
     if (reachable) {
-      this.tripArrivals[connection.trip.tripId] ??= {};
-      this.tripArrivals[connection.trip.tripId][connection.destination] = connection.arrivalTime;
+      const trip = this.connections.trip[c];
+
+      this.tripArrivals[trip] = Math.min(this.tripArrivals[trip], this.connections.alight[c]);
     }
 
     return reachable;
   }
 
-  private isReachableFromSameService(connection: TimetableConnection): boolean {
-    return Object.hasOwn(this.tripArrivals, connection.trip.tripId) &&
-      this.tripArrivals[connection.trip.tripId][connection.origin] <= connection.departureTime;
+  private isReachableFromSameService(c: Connection): boolean {
+    return this.tripArrivals[this.connections.trip[c]] <= this.connections.board[c];
   }
 
-  private isReachableWithChange(connection: TimetableConnection): boolean {
-    const interchange = this.connectionIndex[connection.origin] ? this.getInterchange(connection.origin) : 0;
+  private isReachableWithChange(c: Connection): boolean {
+    const origin = this.connections.departureStation[c];
+    const interchange = this.connectionIndex[origin] === NO_CONNECTION ? 0 : this.interchange[origin];
 
-    return Object.hasOwn(this.earliestArrivals, connection.origin)
-      && this.earliestArrivals[connection.origin] + interchange <= connection.departureTime;
+    return this.earliestArrivals[origin] + interchange <= this.connections.departureTime[c];
   }
 
-  public isBetter(connection: TimetableConnection): boolean {
-    const arrivalTime = this.earliestArrivals[connection.destination];
+  public isBetter(c: Connection): boolean {
+    const arrivalTime = this.earliestArrivals[this.connections.arrivalStation[c]];
 
-    return arrivalTime === undefined
-      || arrivalTime > connection.arrivalTime
-      || (arrivalTime === connection.arrivalTime && this.staysAboard(connection));
+    return arrivalTime > this.connections.arrivalTime[c]
+      || (arrivalTime === this.connections.arrivalTime[c] && this.staysAboard(c));
   }
 
   /**
@@ -52,52 +111,77 @@ export class ScanResults {
    * that couples onto another runs as a trip of its own alongside both portions, so without this
    * whichever of them was scanned first would have the passenger change at the coupling.
    */
-  private staysAboard(connection: TimetableConnection): boolean {
-    const current = this.connectionIndex[connection.destination];
+  private staysAboard(c: Connection): boolean {
+    const current = this.connectionIndex[this.connections.arrivalStation[c]];
 
-    return current !== undefined
-      && isChangeRequired(current, connection)
-      && this.isReachableFromSameService(connection);
+    return current !== NO_CONNECTION
+      && isChangeRequired(this.connections, current, c)
+      && this.isReachableFromSameService(c);
   }
 
   /**
    * Returns true if the connection arrives earlier than the destination was reached before, rather
    * than at the same time on a trip the passenger stays aboard
    */
-  public setConnection(connection: TimetableConnection): boolean {
-    const previous = this.earliestArrivals[connection.destination];
-    this.earliestArrivals[connection.destination] = connection.arrivalTime;
-    this.connectionIndex[connection.destination] = connection;
+  public setConnection(c: Connection): boolean {
+    const destination = this.connections.arrivalStation[c];
+    const previous = this.earliestArrivals[destination];
 
-    return previous === undefined || previous > connection.arrivalTime;
+    this.connectionIndex[destination] = c;
+
+    return this.arrive(destination, this.connections.arrivalTime[c]) < previous;
   }
 
-  public isTransferBetter(transfer: Transfer): boolean {
-    return !Object.hasOwn(this.earliestArrivals, transfer.destination)
-      || this.earliestArrivals[transfer.destination] > this.getTransferArrivalTime(transfer);
+  public isTransferBetter(t: number): boolean {
+    return this.earliestArrivals[this.transfers.destination[t]] > this.getTransferArrivalTime(t);
   }
 
-  public setTransfer(transfer: Transfer): void {
-    this.earliestArrivals[transfer.destination] = this.getTransferArrivalTime(transfer);
-    this.connectionIndex[transfer.destination] = transfer;
+  public setTransfer(t: number): void {
+    const destination = this.transfers.destination[t];
+
+    this.connectionIndex[destination] = transferConnection(t);
+    this.arrive(destination, this.getTransferArrivalTime(t));
   }
 
-  private getTransferArrivalTime(transfer: Transfer): Time {
-    return this.earliestArrivals[transfer.origin] + transfer.duration + this.getInterchange(transfer.origin);
+  private getTransferArrivalTime(t: number): Time {
+    const origin = this.transfers.origin[t];
+
+    return this.earliestArrivals[origin] + this.transfers.duration[t] + this.interchange[origin];
   }
 
-  /**
-   * A station the feed gave no interchange time for is one a change takes no time at
-   */
-  private getInterchange(station: StopID): Time {
-    return this.interchange[station] ?? 0;
+  private arrive(station: StopIdx, time: Time): Time {
+    this.earliestArrivals[station] = time;
+
+    if (this.isDestination[station] === 1) {
+      this.latestDestinationArrival = this.getLatestDestinationArrival();
+    }
+
+    return time;
+  }
+
+  private getLatestDestinationArrival(): Time {
+    let latest = this.destinations.length === 0 ? -1 : 0;
+
+    for (const destination of this.destinations) {
+      latest = Math.max(latest, this.earliestArrivals[destination]);
+    }
+
+    return latest;
+  }
+
+  public getOrigins(): StopIdx[] {
+    return this.origins;
   }
 
   public getConnectionIndex(): ConnectionIndex {
     return this.connectionIndex;
   }
 
-  public isFinished(destinations: StopID[], departureTime: Time): boolean {
-    return !destinations.some(d => !this.earliestArrivals[d] || departureTime < this.earliestArrivals[d]);
+  /**
+   * Every destination has been reached before the connection arrives, so neither it nor any after
+   * it can arrive sooner, or at the same time on a trip the passenger is aboard.
+   */
+  public isFinished(c: Connection): boolean {
+    return this.connections.arrivalTime[c] > this.latestDestinationArrival;
   }
 }

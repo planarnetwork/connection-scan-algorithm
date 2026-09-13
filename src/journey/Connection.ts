@@ -1,23 +1,27 @@
-import type { StopID, Time, Trip } from "@gb-transit/gtfs-loader";
-import type { AnyLeg, Transfer } from "./Journey.js";
-
-export type Connection = TimetableConnection | Transfer;
+import type { Connections } from "../gtfs/Connections.js";
 
 /**
- * A trip's journey between two stations, boarded at one call and alighted at a later one.
+ * How a station was reached: a connection by its index into the feed's connections, or a footpath
+ * by its index into the feed's transfers. They are told apart by sign, so that one array can hold
+ * how every station was reached.
  */
-export interface TimetableConnection {
-  origin: StopID;
-  destination: StopID;
-  departureTime: Time;
-  arrivalTime: Time;
-  trip: Trip;
+export type Connection = number;
+
+/** A station reached by nothing: an origin, or one not reached at all */
+export const NO_CONNECTION = -1;
+
+export function transferConnection(transfer: number): Connection {
+  return -2 - transfer;
 }
 
-export function isTransfer(connection: Connection | AnyLeg): connection is Transfer {
-  return "duration" in connection;
+export function isTransferConnection(connection: Connection): boolean {
+  return connection <= -2;
 }
 
-export function isChangeRequired(a: Connection, b: Connection): boolean {
-  return isTransfer(a) || isTransfer(b) || a.trip.tripId !== b.trip.tripId;
+export function transferOf(connection: Connection): number {
+  return -2 - connection;
+}
+
+export function isChangeRequired(connections: Connections, a: Connection, b: Connection): boolean {
+  return isTransferConnection(a) || isTransferConnection(b) || connections.trip[a] !== connections.trip[b];
 }

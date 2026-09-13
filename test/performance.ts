@@ -67,8 +67,8 @@ async function run() {
     const gtfs = await loadGtfs(fs.createReadStream(process.argv[2] || "gtfs.zip"));
     console.timeEnd("initial load");
 
-    const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-    const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations));
+    const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+    const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs));
 
     console.time("planning");
     const date = new Date();
