@@ -1,13 +1,13 @@
-import * as chai from "chai";
-import { ConnectionScanAlgorithm } from "./ConnectionScanAlgorithm";
-import { c, defaultInterchange, t } from "./ScanResults.spec";
-import { ScanResultsFactory } from "./ScanResultsFactory";
-import { JourneyFactory, TimetableConnection } from "..";
+import { describe, expect, it } from "vitest";
+import { ConnectionScanAlgorithm } from "../../../src/csa/ConnectionScanAlgorithm.js";
+import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
+import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
+import { c, defaultInterchange, setStopTimes } from "../util.js";
 
 describe("ConnectionScanAlgorithm", () => {
   const scanResultsFactory = new ScanResultsFactory(defaultInterchange);
-  const journeyResultsFactory = new JourneyFactory();
-  const noTransfers = { "A": [], "B": [], "C": [], "D": [] };
+  const journeyResultsFactory = new JourneyFactory(new Map());
+  const noTransfers = { A: [], B: [], C: [], D: [] };
 
   it("plan a basic journey", () => {
     const timetable = [
@@ -19,14 +19,14 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
-    chai.expect(journey.origin).to.equal("A");
-    chai.expect(journey.destination).to.equal("D");
-    chai.expect(journey.legs.length).to.equal(1);
-    chai.expect(journey.departureTime).to.equal(1000);
-    chai.expect(journey.arrivalTime).to.equal(1115);
+    expect(journey.origin).toBe("A");
+    expect(journey.destination).toBe("D");
+    expect(journey.legs.length).toBe(1);
+    expect(journey.departureTime).toBe(1000);
+    expect(journey.arrivalTime).toBe(1115);
   });
 
   it("returns no results when there is no connection", () => {
@@ -38,10 +38,9 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
-    const journeys = journeyResultsFactory.getJourneys(results, ["D"]);
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
 
-    chai.expect(journeys.length).to.equal(0);
+    expect(journeyResultsFactory.getJourneys(results, ["D"])).toEqual([]);
   });
 
   it("returns no results when there is a missed connection", () => {
@@ -54,10 +53,22 @@ describe("ConnectionScanAlgorithm", () => {
     setStopTimes(timetable);
 
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
-    const journeys = journeyResultsFactory.getJourneys(results, ["D"]);
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
 
-    chai.expect(journeys.length).to.equal(0);
+    expect(journeyResultsFactory.getJourneys(results, ["D"])).toEqual([]);
+  });
+
+  it("returns no results for an origin or destination the feed does not have", () => {
+    const timetable = [
+      c("A", "B", 1000, 1015),
+    ];
+
+    setStopTimes(timetable);
+
+    const scanner = new ConnectionScanAlgorithm(timetable, {}, scanResultsFactory);
+    const results = scanner.scan({ Z: 900 }, ["Y"], 20190101, 0);
+
+    expect(journeyResultsFactory.getJourneys(results, ["Y"])).toEqual([]);
   });
 
   it("plan a journey that starts with a transfer", () => {
@@ -70,20 +81,20 @@ describe("ConnectionScanAlgorithm", () => {
 
     const transfers = {
       ...noTransfers,
-      "A": [
+      A: [
         { origin: "A", destination: "B", duration: 10, startTime: 0, endTime: Number.MAX_SAFE_INTEGER },
       ]
     };
 
     const scanner = new ConnectionScanAlgorithm(timetable, transfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
-    chai.expect(journey.origin).to.equal("A");
-    chai.expect(journey.destination).to.equal("D");
-    chai.expect(journey.legs.length).to.equal(2);
-    chai.expect(journey.departureTime).to.equal(1010);
-    chai.expect(journey.arrivalTime).to.equal(1115);
+    expect(journey.origin).toBe("A");
+    expect(journey.destination).toBe("D");
+    expect(journey.legs.length).toBe(2);
+    expect(journey.departureTime).toBe(1010);
+    expect(journey.arrivalTime).toBe(1115);
   });
 
   it("plan a journey that ends with a transfer", () => {
@@ -96,20 +107,40 @@ describe("ConnectionScanAlgorithm", () => {
 
     const transfers = {
       ...noTransfers,
-      "C": [
+      C: [
         { origin: "C", destination: "D", duration: 10, startTime: 0, endTime: Number.MAX_SAFE_INTEGER },
       ]
     };
 
     const scanner = new ConnectionScanAlgorithm(timetable, transfers, scanResultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20190101, 0);
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
-    chai.expect(journey.origin).to.equal("A");
-    chai.expect(journey.destination).to.equal("D");
-    chai.expect(journey.legs.length).to.equal(2);
-    chai.expect(journey.departureTime).to.equal(1000);
-    chai.expect(journey.arrivalTime).to.equal(1055);
+    expect(journey.origin).toBe("A");
+    expect(journey.destination).toBe("D");
+    expect(journey.legs.length).toBe(2);
+    expect(journey.departureTime).toBe(1000);
+    expect(journey.arrivalTime).toBe(1055);
+  });
+
+  it("walks on from a station reached on foot again once a train reaches it sooner", () => {
+    const aToB = [c("A", "B", 1000, 1100, "1")];
+    const cToD = [c("C", "D", 1200, 1300, "2")];
+
+    setStopTimes(aToB);
+    setStopTimes(cToD);
+
+    const transfers = {
+      A: [{ origin: "A", destination: "B", duration: 1000, startTime: 0, endTime: Number.MAX_SAFE_INTEGER }],
+      B: [{ origin: "B", destination: "C", duration: 60, startTime: 0, endTime: Number.MAX_SAFE_INTEGER }]
+    };
+
+    const scanner = new ConnectionScanAlgorithm([...aToB, ...cToD], transfers, new ScanResultsFactory({}));
+    const results = scanner.scan({ A: 900 }, ["D"], 20190101, 0);
+    const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
+
+    expect(journey.legs.map(l => `${l.origin}-${l.destination}`)).toEqual(["A-B", "B-C", "C-D"]);
+    expect(journey.arrivalTime).toBe(1300);
   });
 
   /**
@@ -138,39 +169,16 @@ describe("ConnectionScanAlgorithm", () => {
 
     const timetable = [...trip1, ...trip2].sort((a, b) => a.arrivalTime - b.arrivalTime);
 
-    const resultsFactory = new ScanResultsFactory({ "A": 10, "B": 10, "C": 10, "D": 10 });
+    const resultsFactory = new ScanResultsFactory({ A: 10, B: 10, C: 10, D: 10 });
     const scanner = new ConnectionScanAlgorithm(timetable, noTransfers, resultsFactory);
-    const results = scanner.scan({ "A": 900 }, ["D"], 20200101, 0);
+    const results = scanner.scan({ A: 900 }, ["D"], 20200101, 0);
     const [journey] = journeyResultsFactory.getJourneys(results, ["D"]);
 
-    chai.expect(journey.origin).to.equal("A");
-    chai.expect(journey.destination).to.equal("D");
-    chai.expect(journey.legs.length).to.equal(1);
-    chai.expect(journey.departureTime).to.equal(1005);
-    chai.expect(journey.arrivalTime).to.equal(1035);
+    expect(journey.origin).toBe("A");
+    expect(journey.destination).toBe("D");
+    expect(journey.legs.length).toBe(1);
+    expect(journey.departureTime).toBe(1005);
+    expect(journey.arrivalTime).toBe(1035);
   });
 
 });
-
-export function setStopTimes(connections: TimetableConnection[]) {
-  const stopTimes = connections
-    .map(connection => ({
-      stop: connection.origin,
-      pickUp: true,
-      dropOff: true,
-      departureTime: connection.departureTime,
-      arrivalTime: connection.departureTime
-    }));
-
-  stopTimes.push({
-    stop: connections[connections.length - 1].destination,
-    pickUp: true,
-    dropOff: true,
-    departureTime: connections[connections.length - 1].arrivalTime,
-    arrivalTime: connections[connections.length - 1].arrivalTime
-  });
-
-  for (const connection of connections) {
-    connection.trip.stopTimes = stopTimes;
-  }
-}

@@ -1,4 +1,4 @@
-import { Journey } from "../journey/Journey";
+import type { Journey } from "../journey/Journey.js";
 
 /**
  * Filter a number journeys

@@ -1,12 +1,21 @@
-import { ConnectionIndex } from "../csa/ConnectionScanAlgorithm";
-import { AnyLeg, Journey, TimetableLeg } from "./Journey";
-import { StopID, StopTime, Time, Trip } from "../gtfs/Gtfs";
-import { Connection, isChangeRequired, isTransfer } from "./Connection";
+import { isCall, type StopID, type StopTime, type Time, type Trip } from "@gb-transit/gtfs-loader";
+import type { ConnectionIndex } from "../csa/ConnectionScanAlgorithm.js";
+import { type Connection, isChangeRequired, isTransfer } from "./Connection.js";
+import type { AnyLeg, Journey } from "./Journey.js";
 
 /**
  * Creates journeys from the connection index created by the connection scan algorithm.
  */
 export class JourneyFactory {
+
+  /**
+   * The stations are the feed's stop ids to the station each belongs to, as `GtfsData` gives them.
+   * Connections run between stations while a trip's stop times name platforms, so a leg is cut from
+   * its trip by asking which station each call is at.
+   */
+  constructor(
+    private readonly stations: Map<StopID, StopID>
+  ) {}
 
   /**
    * Extract a result for each destination in the list.
@@ -22,8 +31,8 @@ export class JourneyFactory {
   /**
    * Iterate backwards from the destination to the origin collecting connections into legs
    */
-  private getLegs(connections: ConnectionIndex, destination: string): AnyLeg[] | null {
-    let legs: Connection[][] = [];
+  private getLegs(connections: ConnectionIndex, destination: StopID): AnyLeg[] | null {
+    const legs: Connection[][] = [];
     let legConnections: Connection[] = [];
     let previousConnection: Connection | null = null;
 
@@ -58,7 +67,7 @@ export class JourneyFactory {
       const origin = firstConnection.origin;
       const destination = cs[cs.length - 1].destination;
       const trip = firstConnection.trip;
-      const stopTimes = this.getStopTimes(firstConnection.trip, origin, firstConnection.departureTime, destination);
+      const stopTimes = this.getStopTimes(trip, origin, firstConnection.departureTime, destination);
 
       return { origin, destination, trip, stopTimes: stopTimes || [] };
     }
@@ -71,11 +80,12 @@ export class JourneyFactory {
     const newLegs: AnyLeg[] = [];
 
     for (let i = legs.length - 1; i >= 0; i--) {
-      if (isTransfer(legs[i])) {
-        newLegs.push(legs[i]);
+      const legI = legs[i];
+
+      if (isTransfer(legI)) {
+        newLegs.push(legI);
       }
       else {
-        let legI = legs[i] as TimetableLeg;
         let lastDepartureTime = legI.stopTimes[0].departureTime;
 
         for (let j = i - 1; j >= 0; j--) {
@@ -98,14 +108,22 @@ export class JourneyFactory {
   }
 
   /**
-   * Try to create a new leg from the trip, ensuring the new leg departs the origin no earlier than the given
-   * departure time.
+   * Try to create a new leg from the trip, ensuring the new leg departs the origin no earlier than
+   * the given departure time. The stop times are the feed's own, so a leg between two stations still
+   * says which platform it uses at each end, but the points the trip only passes are left out.
    */
   private getStopTimes(trip: Trip, origin: StopID, departureTime: Time, destination: StopID): StopTime[] | null {
-    const start = trip.stopTimes.findIndex(c => c.pickUp && c.stop === origin && c.departureTime >= departureTime);
-    const end = trip.stopTimes.findIndex((c, i) => c.dropOff && i > start && c.stop === destination);
+    const stopTimes = trip.stopTimes;
+    const start = stopTimes.findIndex(
+      c => c.pickUp && c.departureTime >= departureTime && this.stationOf(c) === origin
+    );
+    const end = stopTimes.findIndex((c, i) => c.dropOff && i > start && this.stationOf(c) === destination);
 
-    return start === -1 || end === -1 ? null : trip.stopTimes.slice(start, end + 1);
+    return start === -1 || end === -1 ? null : stopTimes.slice(start, end + 1).filter(isCall);
+  }
+
+  private stationOf(stopTime: StopTime): StopID {
+    return this.stations.get(stopTime.stop) ?? stopTime.stop;
   }
 
   private getJourney(legs: AnyLeg[]): Journey {

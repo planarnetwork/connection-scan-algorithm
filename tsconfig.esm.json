@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rootDir": "src",
+    "outDir": "dist/esm"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist/"]
+}
