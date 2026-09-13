@@ -10,11 +10,9 @@ export type {
 
 export * from "./csa/ConnectionScanAlgorithm.js";
 export * from "./csa/ScanResults.js";
-export * from "./csa/ScanResultsFactory.js";
 
-export * from "./gtfs/GtfsLoader.js";
+export * from "./timetable/Timetable.js";
 
-export * from "./journey/Connection.js";
 export * from "./journey/Journey.js";
 export * from "./journey/JourneyFactory.js";
 

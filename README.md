@@ -37,25 +37,49 @@ Find the first results that depart after a specific time
 
 ```javascript
 const fs = require("fs");
-const {
-  loadGtfs, JourneyFactory, ConnectionScanAlgorithm, ScanResultsFactory, MultipleCriteriaFilter, DepartAfterQuery
-} = require("connection-scan-algorithm");
+const { loadTimetable, MultipleCriteriaFilter, DepartAfterQuery } = require("connection-scan-algorithm");
 
-const gtfs = await loadGtfs(fs.createReadStream("gtfs.zip"));
-// or toGtfsData(feed) if you already have a feed from @gb-transit/gtfs-loader
+const timetable = await loadTimetable(fs.createReadStream("gtfs.zip"));
+// or createTimetable(feed) if you already have a feed from @gb-transit/gtfs-loader
 
-const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+const query = new DepartAfterQuery(timetable, [new MultipleCriteriaFilter()]);
 const results = query.plan(["TBW"], ["NRW"], new Date(), 9 * 3600);
 ```
+
+A timetable is built once and planned over as many times as you like, for any date the feed covers.
+
+### The timetable
+
+Stations are numbered as the timetable is built, and a scan works in those numbers throughout: every
+connection is a row of parallel integer arrays, sorted by arrival, and what a scan finds is an
+earliest arrival and the connection or footpath achieving it for each station, again by number. The
+codes, trips and stop times are only looked up again for the journeys returned.
+
+`ConnectionScanAlgorithm` and `JourneyFactory` are exported for a caller that wants the scan's
+results rather than journeys, or its own query:
+
+```javascript
+const { ConnectionScanAlgorithm, JourneyFactory } = require("connection-scan-algorithm");
+
+const csa = new ConnectionScanAlgorithm(timetable);
+const [origin, destination] = ["TBW", "NRW"].map(code => timetable.stationIndex.get(code));
+const results = csa.scan(new Map([[origin, 9 * 3600]]), [destination], 20260915, 2);
+
+results.earliestArrivals[destination]; // seconds past midnight, or NOT_REACHED
+new JourneyFactory(timetable).getJourneys(results, [destination]);
+```
+
+A scan starts at the first connection arriving after the departure time, and stops once every
+destination has been reached earlier than the connection it is on arrives. Whether each trip runs is
+worked out once per date, asking each distinct calendar rather than each trip.
 
 ### Stations and platforms
 
 A connection runs between stations, because that is where interchange time and footpaths are
 defined and the only place a change of train is possible. A stop that gives a `parent_station` is
 read as belonging to it, and a station is named by its `stop_code` where it has one, so that is what
-queries are made with and journeys are returned in. `gtfs.stations` maps every feed stop id to the
-station it belongs to, which is what `JourneyFactory` needs to cut a leg out of its trip.
+queries are made with and journeys are returned in. `timetable.stations` names each station by its
+number, and `timetable.stationIndex` numbers each code.
 
 The stop times of a leg are the feed's own, so a leg between two stations still says which platform
 it uses at each end. A call the vehicle only passes through is not somewhere a journey can start or

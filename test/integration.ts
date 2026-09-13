@@ -1,11 +1,8 @@
 import * as fs from "node:fs";
-import { ConnectionScanAlgorithm } from "../src/csa/ConnectionScanAlgorithm.js";
-import { ScanResultsFactory } from "../src/csa/ScanResultsFactory.js";
-import { loadGtfs } from "../src/gtfs/GtfsLoader.js";
 import { journeyToString } from "../src/journey/Journey.js";
-import { JourneyFactory } from "../src/journey/JourneyFactory.js";
 import { DepartAfterQuery } from "../src/query/DepartAfterQuery.js";
 import { MultipleCriteriaFilter } from "../src/query/MultipleCriteriaFilter.js";
+import { loadTimetable } from "../src/timetable/Timetable.js";
 
 async function run() {
   const filename = process.argv[2] || "gtfs.zip";
@@ -15,11 +12,10 @@ async function run() {
 
   console.log(`Loading ${filename}`);
   console.time("initial load");
-  const gtfs = await loadGtfs(fs.createReadStream(filename));
+  const timetable = await loadTimetable(fs.createReadStream(filename));
   console.timeEnd("initial load");
 
-  const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-  const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+  const query = new DepartAfterQuery(timetable, [new MultipleCriteriaFilter()]);
 
   console.time("query");
   const results = query.plan(origins, destinations, new Date(), time);

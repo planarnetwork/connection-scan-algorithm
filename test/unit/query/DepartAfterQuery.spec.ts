@@ -1,25 +1,13 @@
-import { type GTFSFeed, Service, type ServiceCalendar, type StopTime, type Trip } from "@gb-transit/gtfs-loader";
+import { type GTFSFeed, Service, type ServiceCalendar } from "@gb-transit/gtfs-loader";
 import { describe, expect, it } from "vitest";
-import { ConnectionScanAlgorithm } from "../../../src/csa/ConnectionScanAlgorithm.js";
-import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
-import { toGtfsData } from "../../../src/gtfs/GtfsLoader.js";
 import type { TimetableLeg } from "../../../src/journey/Journey.js";
-import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
 import { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
 import { MultipleCriteriaFilter } from "../../../src/query/MultipleCriteriaFilter.js";
-import { allDays, everyDay, feed, st } from "../util.js";
-
-const TUESDAY = new Date("2026-09-08T09:00:00");
-
-function trip(tripId: string, stopTimes: StopTime[], service: ServiceCalendar = everyDay): Trip {
-  return { tripId, serviceId: tripId, service, stopTimes };
-}
+import { createTimetable } from "../../../src/timetable/Timetable.js";
+import { allDays, feed, platforms, st, trip, TUESDAY } from "../util.js";
 
 function query(overrides: Partial<GTFSFeed>): DepartAfterQuery {
-  const gtfs = toGtfsData(feed(overrides));
-  const csa = new ConnectionScanAlgorithm(gtfs.connections, gtfs.transfers, new ScanResultsFactory(gtfs.interchange));
-
-  return new DepartAfterQuery(csa, new JourneyFactory(gtfs.stations), [new MultipleCriteriaFilter()]);
+  return new DepartAfterQuery(createTimetable(feed({ stops: platforms, ...overrides })), [new MultipleCriteriaFilter()]);
 }
 
 function tripsOf(legs: unknown[]): string[] {
@@ -39,6 +27,24 @@ describe("DepartAfterQuery", () => {
     expect(journey.origin).toBe("NRW");
     expect(journey.destination).toBe("DIS");
     expect(leg.stopTimes.map(s => s.stop)).toEqual(["NRW1", "DIS2"]);
+  });
+
+  it("leaves the points a train passes through out of its leg", () => {
+    const passing = { ...st("DIS2", 1050), pickUp: false, dropOff: false };
+    const [journey] = query({ trips: [trip("1", [st("NRW1", 1000), passing, st("LST8", 1200)])] })
+      .plan(["NRW"], ["LST"], TUESDAY, 900);
+    const [leg] = journey.legs as TimetableLeg[];
+
+    expect(leg.stopTimes.map(s => s.stop)).toEqual(["NRW1", "LST8"]);
+    expect(leg.trip.stopTimes.length).toBe(3);
+  });
+
+  it("returns nothing where every origin or every destination is unknown", () => {
+    const planner = query({ trips: [front] });
+
+    expect(planner.plan(["XXX"], ["DIS"], TUESDAY, 900)).toEqual([]);
+    expect(planner.plan(["NRW"], ["XXX"], TUESDAY, 900)).toEqual([]);
+    expect(planner.plan(["XXX", "NRW"], ["DIS"], TUESDAY, 900).length).toBe(1);
   });
 
   it("stays aboard across a coupling rather than changing where there is time to", () => {
