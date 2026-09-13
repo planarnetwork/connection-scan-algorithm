@@ -1,204 +1,112 @@
-import * as gtfs from "gtfs-stream";
-import { pushNested, setNested } from "ts-array-utils";
-import { Readable } from "stream";
-import { TimeParser } from "./TimeParser";
-import { Service } from "./Service";
-import {CalendarIndex, StopID, StopIndex, StopTime, Time, Trip} from "./Gtfs";
-import { TimetableConnection } from "../journey/Connection";
-import { Transfer } from "..";
+import {
+  type GTFSFeed, type GTFSSource, type Interchange, loadGTFS, normalise, type StopID, type StopIndex,
+  type StopTime, type Trip
+} from "@gb-transit/gtfs-loader";
+import type { TimetableConnection } from "../journey/Connection.js";
+import type { Transfer } from "../journey/Journey.js";
 
 /**
- * Returns trips, transfers, interchange time and calendars from a GTFS zip.
+ * Returns connections, transfers and interchange times from a GTFS zip.
  */
-export class GtfsLoader {
-
-  constructor(
-    private readonly timeParser: TimeParser
-  ) {}
-
-  public load(input: Readable): Promise<GtfsData> {
-    return new Promise(resolve => {
-      const processor = new StatefulGtfsLoader(this.timeParser);
-
-      input
-          .pipe(gtfs({ raw: true }))
-          .on("data", entity => processor[entity.type] && processor[entity.type](entity.data))
-          .on("end", () => resolve(processor.finalize()));
-    });
-
-  }
-
+export async function loadGtfs(source: GTFSSource): Promise<GtfsData> {
+  return toGtfsData(await loadGTFS(source));
 }
 
 /**
- * Encapsulation of the GTFS data while it is being loaded from the zip
+ * Puts a feed into the terms the connection scan works in.
+ *
+ * `normalise` resolves stops to the station they belong to, defines footpaths and interchange times
+ * at those stations, picks out the calls a passenger can actually use, and adds a trip for each
+ * coupling so that staying on a vehicle that carries on as another service is one trip rather than
+ * a change. What is left here is turning each trip into connections between stations, sorted as the
+ * scan reads them.
  */
-class StatefulGtfsLoader {
-  private readonly trips: Trip[] = [];
-  private readonly transfers = {};
-  private readonly interchange = {};
-  private readonly calendars: CalendarIndex = {};
-  private readonly dates = {};
-  private readonly stopTimes = {};
-  private readonly stops = {};
+export function toGtfsData(feed: GTFSFeed): GtfsData {
+  const { trips, calls, transfers, interchange, stations } = normalise(feed);
+  const connections: TimetableConnection[] = [];
 
-  constructor(
-    private readonly timeParser: TimeParser
-  ) {}
-
-  public link(row: any): void {
-    const t = {
-      origin: row.from_stop_id,
-      destination: row.to_stop_id,
-      duration: +row.duration,
-      startTime: this.timeParser.getTime(row.start_time),
-      endTime: this.timeParser.getTime(row.end_time)
-    };
-
-    pushNested(t, this.transfers, row.from_stop_id);
+  for (let t = 0; t < trips.length; t++) {
+    addConnections(connections, trips[t], calls[t], stations);
   }
 
-  public calendar(row: any): void {
-    this.calendars[row.service_id] = {
-      serviceId: row.service_id,
-      startDate: +row.start_date,
-      endDate: +row.end_date,
-      days: {
-        0: row.sunday === "1",
-        1: row.monday === "1",
-        2: row.tuesday === "1",
-        3: row.wednesday === "1",
-        4: row.thursday === "1",
-        5: row.friday === "1",
-        6: row.saturday === "1"
-      },
-      include: {},
-      exclude: {}
-    };
-  }
+  connections.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
-  public calendar_date(row: any): void {
-    setNested(row.exception_type === "1", this.dates, row.service_id, row.date);
-  }
+  return {
+    connections,
+    transfers: indexTransfersByOrigin(transfers),
+    interchange,
+    stops: feed.stops,
+    stations
+  };
+}
 
-  public trip(row: any): void {
-    this.trips.push({ serviceId: row.service_id, tripId: row.trip_id, stopTimes: [], service: {} as any });
-  }
+/**
+ * Go through the calls adding connections until at least one pick up and set down point has been
+ * passed. A stopping pattern A(p/d) -> B(d) -> C(p/d) would otherwise create A->B but never reach C,
+ * so this gives A->B and A->C.
+ */
+function addConnections(
+  connections: TimetableConnection[],
+  trip: Trip,
+  calls: StopTime[],
+  stations: Map<StopID, StopID>
+): void {
+  const station = calls.map(c => stations.get(c.stop) ?? c.stop);
 
-  public stop_time(row: any): void {
-    const stopTime = {
-      stop: row.stop_id,
-      departureTime: this.timeParser.getTime(row.departure_time),
-      arrivalTime: this.timeParser.getTime(row.arrival_time),
-      pickUp: row.pickup_type === "0",
-      dropOff: row.drop_off_type === "0"
-    };
-
-    pushNested(stopTime, this.stopTimes, row.trip_id);
-  }
-
-  public transfer(row: any): void {
-    if (row.from_stop_id === row.to_stop_id) {
-      this.interchange[row.from_stop_id] = +row.min_transfer_time;
-    }
-    else {
-      const t = {
-        origin: row.from_stop_id,
-        destination: row.to_stop_id,
-        duration: +row.min_transfer_time,
-        startTime: 0,
-        endTime: Number.MAX_SAFE_INTEGER
-      };
-
-      pushNested(t, this.transfers, row.from_stop_id);
-    }
-  }
-
-  public stop(row: any): void {
-    const stop = {
-      id: row.stop_id,
-      code: row.stop_code,
-      name: row.stop_name,
-      description: row.stop_desc,
-      latitude: +row.stop_lat,
-      longitude: +row.stop_lon,
-      timezone: row.zone_id
-    };
-
-    setNested(stop, this.stops, row.stop_id);
-  }
-
-  public finalize(): GtfsData {
-    const services = {};
-    const connections: TimetableConnection[] = [];
-
-    for (const c of Object.values(this.calendars)) {
-      services[c.serviceId] = new Service(c.startDate, c.endDate, c.days, this.dates[c.serviceId] || {});
-    }
-
-    for (const t of this.trips) {
-      t.stopTimes = this.stopTimes[t.tripId];
-      t.service = services[t.serviceId];
-
-      connections.push(...this.getConnectionsFromTrip(t));
-    }
-
-    connections.sort((a, b) => a.arrivalTime - b.arrivalTime);
-
-    for (const stop of Object.keys(this.stops)) {
-      this.transfers[stop] = this.transfers[stop] || [];
-    }
-
-    return { connections, transfers: this.transfers, interchange: this.interchange, stops: this.stops };
-  }
-
-  private getConnectionsFromTrip(t: Trip): TimetableConnection[] {
-    const connections: TimetableConnection[] = [];
-
-    for (let i = 0; i < t.stopTimes.length - 1; i++) {
-      if (t.stopTimes[i].pickUp) {
-        // go through the stops adding connections until we have passed at least one pick up and drop off point
-        // need the check for pick up points as a stopping pattern A(p/d) -> B(d) -> C(p/d) would create connections
-        // A->B but not get you to C. This way we get A->B + A->C
-        for (let j = i + 1; j < t.stopTimes.length; j++) {
-          if (t.stopTimes[j].dropOff) {
+  for (let i = 0; i < calls.length - 1; i++) {
+    if (calls[i].pickUp) {
+      for (let j = i + 1; j < calls.length; j++) {
+        if (calls[j].dropOff) {
+          // two calls at one station are a stop and a start, not a journey between places
+          if (station[i] !== station[j]) {
             connections.push({
-              origin: t.stopTimes[i].stop,
-              destination: t.stopTimes[j].stop,
-              departureTime: t.stopTimes[i].departureTime,
-              arrivalTime: t.stopTimes[j].arrivalTime,
-              trip: t
+              origin: station[i],
+              destination: station[j],
+              departureTime: calls[i].departureTime,
+              arrivalTime: calls[j].arrivalTime,
+              trip
             });
+          }
 
-            if (t.stopTimes[j].pickUp) {
-              break;
-            }
+          if (calls[j].pickUp) {
+            break;
           }
         }
       }
     }
-
-    return connections;
   }
-
 }
 
 /**
- * Transfers indexed by origin
+ * `normalise` returns footpaths as a flat list, the scan asks for them by origin.
  */
-export type TransfersByOrigin = Record<StopID, Transfer[]>;
+function indexTransfersByOrigin(transfers: Transfer[]): TransfersByOrigin {
+  const index: TransfersByOrigin = {};
+
+  for (const transfer of transfers) {
+    index[transfer.origin] ??= [];
+    index[transfer.origin].push(transfer);
+  }
+
+  return index;
+}
 
 /**
- * Index of stop to interchange time
+ * Transfers indexed by origin station
  */
-export type Interchange = Record<StopID, Time>;
+export type TransfersByOrigin = Record<StopID, Transfer[]>;
 
 /**
  * Contents of the GTFS zip file
  */
 export type GtfsData = {
+  /** every connection between two stations, sorted by arrival time */
   connections: TimetableConnection[],
   transfers: TransfersByOrigin,
+  /** interchange time at each station */
   interchange: Interchange,
-  stops: StopIndex
+  /** the feed's stops, as it gave them, which may identify individual platforms */
+  stops: StopIndex,
+  /** feed stop id to the station it belongs to, which is what journeys are planned between */
+  stations: Map<StopID, StopID>
 };

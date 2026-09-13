@@ -1,6 +1,6 @@
-import { Interchange } from "../gtfs/GtfsLoader";
-import { OriginDepartureTimes } from "./ConnectionScanAlgorithm";
-import { ScanResults } from "./ScanResults";
+import type { Interchange } from "@gb-transit/gtfs-loader";
+import type { OriginDepartureTimes } from "./ConnectionScanAlgorithm.js";
+import { ScanResults } from "./ScanResults.js";
 
 /**
  * Creates a new ScanResults object for a given set of origins

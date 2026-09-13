@@ -1,8 +1,11 @@
-import { StopID, Time, Trip } from "../gtfs/Gtfs";
-import { AnyLeg, Transfer } from "./Journey";
+import type { StopID, Time, Trip } from "@gb-transit/gtfs-loader";
+import type { AnyLeg, Transfer } from "./Journey.js";
 
 export type Connection = TimetableConnection | Transfer;
 
+/**
+ * A trip's journey between two stations, boarded at one call and alighted at a later one.
+ */
 export interface TimetableConnection {
   origin: StopID;
   destination: StopID;
@@ -12,7 +15,7 @@ export interface TimetableConnection {
 }
 
 export function isTransfer(connection: Connection | AnyLeg): connection is Transfer {
-  return connection.hasOwnProperty("duration");
+  return "duration" in connection;
 }
 
 export function isChangeRequired(a: Connection, b: Connection): boolean {

@@ -1,4 +1,4 @@
-import { Duration, StopID, StopTime, Time, Trip } from "../gtfs/Gtfs";
+import type { Duration, StopID, StopTime, Time, Trip } from "@gb-transit/gtfs-loader";
 
 /**
  * A leg
@@ -41,20 +41,14 @@ export interface Transfer extends Leg {
   endTime: Time;
 }
 
-export function journeyToString(j: Journey) {
-  return toTime(j.departureTime) + ", " +
-    toTime(j.arrivalTime) + ", " +
-    [j.legs[0].origin, ...j.legs.map(l => l.destination)].join("-");
+export function journeyToString(j: Journey): string {
+  return `${toTime(j.departureTime)}, ${toTime(j.arrivalTime)}, ${[j.legs[0].origin, ...j.legs.map(l => l.destination)].join("-")}`;
 }
 
-function toTime(time: number) {
-  let hours: any   = Math.floor(time / 3600);
-  let minutes: any = Math.floor((time - (hours * 3600)) / 60);
-  let seconds: any = time - (hours * 3600) - (minutes * 60);
+function toTime(time: Time): string {
+  const hours = Math.floor(time / 3600);
+  const minutes = Math.floor((time - hours * 3600) / 60);
+  const seconds = time - hours * 3600 - minutes * 60;
 
-  if (hours   < 10) { hours   = "0" + hours; }
-  if (minutes < 10) { minutes = "0" + minutes; }
-  if (seconds < 10) { seconds = "0" + seconds; }
-
-  return hours + ":" + minutes + ":" + seconds;
+  return [hours, minutes, seconds].map(n => n.toString().padStart(2, "0")).join(":");
 }

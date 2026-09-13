@@ -1,8 +1,8 @@
-import { Connection, TimetableConnection } from "../journey/Connection";
-import { TransfersByOrigin } from "../gtfs/GtfsLoader";
-import { DayOfWeek, StopID, Time } from "../gtfs/Gtfs";
-import { ScanResults } from "./ScanResults";
-import { ScanResultsFactory } from "./ScanResultsFactory";
+import type { DateNumber, DayOfWeek, StopID, Time } from "@gb-transit/gtfs-loader";
+import type { TransfersByOrigin } from "../gtfs/GtfsLoader.js";
+import type { Connection, TimetableConnection } from "../journey/Connection.js";
+import type { ScanResults } from "./ScanResults.js";
+import type { ScanResultsFactory } from "./ScanResultsFactory.js";
 
 /**
  * Implementation of the connection scan algorithm.
@@ -18,7 +18,12 @@ export class ConnectionScanAlgorithm {
   /**
    * Return an index of connections that achieve the earliest arrival time at each stop.
    */
-  public scan(origins: OriginDepartureTimes, destinations: StopID[], date: number, dow: DayOfWeek): ConnectionIndex {
+  public scan(
+    origins: OriginDepartureTimes,
+    destinations: StopID[],
+    date: DateNumber,
+    dow: DayOfWeek
+  ): ConnectionIndex {
     const results = this.resultsFactory.create({ ...origins });
 
     for (const origin in origins) {
@@ -27,9 +32,7 @@ export class ConnectionScanAlgorithm {
 
     for (const c of this.connections) {
       if (c.trip.service.runsOn(date, dow) && results.isReachable(c) && results.isBetter(c)) {
-        const newStopReached = results.setConnection(c);
-
-        if (newStopReached) {
+        if (results.setConnection(c)) {
           this.scanTransfers(results, c.destination);
         }
         if (results.isFinished(destinations, c.departureTime)) {
@@ -41,14 +44,16 @@ export class ConnectionScanAlgorithm {
     return results.getConnectionIndex();
   }
 
+  /**
+   * Walk every footpath out of a station whenever it is reached earlier than it was, not only the
+   * first time: a station first reached on foot is often then reached sooner by train, and the
+   * footpaths onwards from it have to start from the earlier time.
+   */
   private scanTransfers(results: ScanResults, origin: StopID): void {
-    for (const transfer of this.transfers[origin]) {
+    for (const transfer of this.transfers[origin] ?? []) {
       if (results.isTransferBetter(transfer)) {
-        const newStopReached = results.setTransfer(transfer);
-
-        if (newStopReached) {
-          this.scanTransfers(results, transfer.destination);
-        }
+        results.setTransfer(transfer);
+        this.scanTransfers(results, transfer.destination);
       }
     }
   }

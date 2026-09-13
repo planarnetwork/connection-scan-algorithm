@@ -2,21 +2,40 @@
   "name": "connection-scan-algorithm",
   "version": "1.1.0",
   "description": "Connection Scan Algorithm",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "module": "./dist/esm/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/planarnetwork/connection-scan-algorithm.git"
   },
   "scripts": {
-    "test": "npm run lint && mocha --require ts-node/register **/*.spec.ts",
-    "prepublishOnly": "rm -rf ./dist/ && tsc -p ./ --outDir dist/",
-    "lint-raw": "tslint --project tsconfig.json",
-    "lint": "npm run lint-raw -- -t stylish",
-    "coverage": "nyc --reporter=text npm test",
-    "patterns": "ts-node ./src/transfer-patterns.ts",
-    "start": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/cli.ts",
-    "perf": "NODE_OPTIONS=$NODE_DEBUG_OPTION ts-node src/performance.ts"
+    "test": "npm run lint && npm run typecheck && vitest run",
+    "gtest": "vitest run -t",
+    "watch-test": "vitest",
+    "typecheck": "tsc --noEmit -p ./",
+    "build": "rm -rf ./dist/ && tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && cp cjs-package.json dist/cjs/package.json && cp esm-package.json dist/esm/package.json",
+    "prepublishOnly": "npm run build",
+    "changeset": "changeset",
+    "release": "changeset publish",
+    "lint": "biome lint src/ test/",
+    "int": "tsx ./test/integration.ts",
+    "perf": "tsx ./test/performance.ts"
   },
   "keywords": [
     "Journey",
@@ -26,37 +45,19 @@
   ],
   "author": "Linus Norton <linusnorton@gmail.com>",
   "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/planarnetwork/connection-scan-algorithm/issues"
+  },
+  "homepage": "https://github.com/planarnetwork/connection-scan-algorithm#readme",
   "devDependencies": {
-    "@types/chai": "^4.2.9",
-    "@types/lru-cache": "^5.1.0",
-    "@types/mocha": "^5.2.7",
-    "@types/node": "^12.12.28",
-    "@types/progress": "^2.0.3",
-    "chai": "^4.2.0",
-    "mocha": "^10.2.0",
-    "nyc": "^14.1.1",
-    "ts-node": "^8.6.2",
-    "tslint": "^5.20.1",
-    "typescript": "^3.8.2"
+    "@biomejs/biome": "2.5.12",
+    "@changesets/cli": "^3.0.2",
+    "@types/node": "26.5.0",
+    "tsx": "^4.23.13",
+    "typescript": "7.0.2",
+    "vitest": "^5.0.0"
   },
   "dependencies": {
-    "gtfs-stream": "^2.1.0",
-    "mysql2": "^2.1.0",
-    "progress": "^2.0.3",
-    "ts-array-utils": "^0.5.0"
-  },
-  "nyc": {
-    "extends": "@istanbul/nyc-config-typescript",
-    "all": true,
-    "check-coverage": true,
-    "extension": [
-      ".ts"
-    ],
-    "include": [
-      "src/**/*.ts"
-    ],
-    "exclude": [
-      "src/*.ts"
-    ]
+    "@gb-transit/gtfs-loader": "^1.4.0"
   }
 }
