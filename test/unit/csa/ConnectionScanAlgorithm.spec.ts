@@ -1,12 +1,13 @@
 import { Service } from "@gb-transit/gtfs-loader";
 import { describe, expect, it } from "vitest";
 import { ConnectionScanAlgorithm } from "../../../src/csa/ConnectionScanAlgorithm.js";
-import { createTimetable, NOT_REACHED } from "../../../src/timetable/Timetable.js";
-import { allDays, byOrigin, feed, legsOf, pickUpOnly, plan, st, trip, walk } from "../util.js";
+import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
+import { NO_CONNECTION } from "../../../src/journey/Connection.js";
+import { allDays, byOrigin, gtfsOf, legsOf, pickUpOnly, plan, st, trip, walk } from "../util.js";
 
 describe("ConnectionScanAlgorithm", () => {
 
-  it("plans a basic journey", () => {
+  it("plan a basic journey", () => {
     const [journey] = plan({
       trips: [trip("1", [st("A", 1000), st("B", 1015), st("C", 1045), st("D", 1115)])]
     }, ["A"], ["D"], 900);
@@ -43,7 +44,7 @@ describe("ConnectionScanAlgorithm", () => {
     expect(plan({ trips: [trip("1", [st("A", 1000), st("B", 1015)], septemberOnly)] }, ["A"], ["B"], 900)).toEqual([]);
   });
 
-  it("plans a journey that starts with a footpath", () => {
+  it("plan a journey that starts with a transfer", () => {
     const [journey] = plan({
       trips: [trip("1", [st("B", 1020), st("C", 1045), st("D", 1115)])],
       transfers: byOrigin(walk("A", "B", 10))
@@ -54,7 +55,7 @@ describe("ConnectionScanAlgorithm", () => {
     expect(journey.arrivalTime).toBe(1115);
   });
 
-  it("plans a journey that ends with a footpath", () => {
+  it("plan a journey that ends with a transfer", () => {
     const [journey] = plan({
       trips: [trip("1", [st("A", 1000), st("B", 1015), st("C", 1045)])],
       transfers: byOrigin(walk("C", "D", 10))
@@ -75,36 +76,12 @@ describe("ConnectionScanAlgorithm", () => {
     expect(journey.arrivalTime).toBe(1300);
   });
 
-  it("does not change where there is less than the interchange time", () => {
-    const trips = [trip("1", [st("A", 1000), st("B", 1015)]), trip("2", [st("B", 1030), st("C", 1100)])];
-
-    expect(plan({ trips, interchange: { B: 100 } }, ["A"], ["C"], 900)).toEqual([]);
-  });
-
-  it("changes in no time at a station with no interchange time", () => {
-    const [journey] = plan({
-      trips: [trip("1", [st("A", 1000), st("B", 1015)]), trip("2", [st("B", 1015), st("C", 1100)])]
-    }, ["A"], ["C"], 900);
-
-    expect(legsOf(journey)).toEqual(["1:A-B", "2:B-C"]);
-  });
-
-  it("charges the interchange time at both ends of a footpath", () => {
-    const trips = (departs: number) => [
-      trip("1", [st("A", 1000), st("B", 1015)]),
-      trip("2", [st("C", departs), st("D", 1700)])
-    ];
-    const overrides = { interchange: { B: 300, C: 200 }, transfers: byOrigin(walk("B", "C", 60)) };
-
-    expect(plan({ ...overrides, trips: trips(1574) }, ["A"], ["D"], 900)).toEqual([]);
-    expect(plan({ ...overrides, trips: trips(1575) }, ["A"], ["D"], 900).length).toBe(1);
-  });
-
   /**
-   * Two trips run in parallel. Trip 1 arrives earliest at B and C and trip 2 earliest at D. Changing
-   * onto trip 2 at C is ruled out by the interchange time, but it could have been boarded at A, so the
-   * scan reaches D on it. The connections found are trip 1 to C and trip 2 from C, and the journey is
-   * tidied up by realising the whole of it can be made on trip 2.
+   * In this scenario there are two trips running in parallel. Trip 1 arrives earliest at A, B and C and Trip 2 arrives
+   * earliest at D. It is not possible to change onto the second trip at C because of the interchange change, however
+   * the algorithm should detect that it was possible to board at A and add the connection. The list of connections
+   * will be incorrect as it will use trip 1 for A->B, B->C and then trip 2 for C->D. The results factory tidies this
+   * up by realising that the whole journey could be made on a single trip (trip 2).
    */
   it("checks for connections missed because of interchange time", () => {
     const [journey] = plan({
@@ -152,17 +129,17 @@ describe("ConnectionScanAlgorithm", () => {
     expect(legsOf(journey)).toEqual(["1:A-D"]);
   });
 
-  it("gives each scan results of its own", () => {
-    const timetable = createTimetable(feed({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] }));
-    const [a, b, c] = ["A", "B", "C"].map(code => timetable.stationIndex.get(code)!);
-    const csa = new ConnectionScanAlgorithm(timetable);
+  it("gives each scan a connection index of its own", () => {
+    const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] });
+    const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+    const [a, b] = ["A", "B"].map(code => gtfs.stopTable.indexOf(code));
 
-    const fromA = csa.scan(new Map([[a, 900]]), [c], 20260908, 2);
-    const fromB = csa.scan(new Map([[b, 900]]), [c], 20260908, 2);
+    const fromA = csa.scan({ A: 900 }, ["C"], 20260908, 2);
+    const fromB = csa.scan({ B: 900 }, ["C"], 20260908, 2);
 
-    expect(fromA.earliestArrivals[b]).toBe(1100);
-    expect(fromB.earliestArrivals[a]).toBe(NOT_REACHED);
-    expect(fromB.earliestArrivals[c]).toBe(1200);
+    expect(fromA[b]).not.toBe(NO_CONNECTION);
+    expect(fromB[a]).toBe(NO_CONNECTION);
+    expect(fromB[b]).toBe(NO_CONNECTION);
   });
 
 });

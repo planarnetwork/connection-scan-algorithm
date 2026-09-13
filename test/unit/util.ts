@@ -2,10 +2,15 @@ import {
   type GTFSFeed, Service, type ServiceCalendar, type Stop, type StopID, type StopTime, type Time, type Transfer,
   type Trip
 } from "@gb-transit/gtfs-loader";
+import { ConnectionScanAlgorithm } from "../../src/csa/ConnectionScanAlgorithm.js";
+import type { ScanResults } from "../../src/csa/ScanResults.js";
+import { ScanResultsFactory } from "../../src/csa/ScanResultsFactory.js";
+import { type GtfsData, toGtfsData } from "../../src/gtfs/GtfsLoader.js";
+import type { Connection } from "../../src/journey/Connection.js";
 import type { Journey, TimetableLeg } from "../../src/journey/Journey.js";
+import { JourneyFactory } from "../../src/journey/JourneyFactory.js";
 import { DepartAfterQuery } from "../../src/query/DepartAfterQuery.js";
 import { MultipleCriteriaFilter } from "../../src/query/MultipleCriteriaFilter.js";
-import { createTimetable } from "../../src/timetable/Timetable.js";
 
 export const allDays = { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true };
 
@@ -42,6 +47,20 @@ export function walk(origin: StopID, destination: StopID, duration: Time): Trans
 }
 
 /**
+ * The footpaths indexed by the stop they leave from, as the loader gives them.
+ */
+export function byOrigin(...transfers: Transfer[]): GTFSFeed["transfers"] {
+  const index: GTFSFeed["transfers"] = {};
+
+  for (const transfer of transfers) {
+    index[transfer.origin] ??= [];
+    index[transfer.origin].push(transfer);
+  }
+
+  return index;
+}
+
+/**
  * A feed of the given trips and footpaths. A stop the feed has no entry for is a station of its own,
  * so a spec that is not about platforms can name its stations directly.
  */
@@ -61,22 +80,8 @@ export function feed(overrides: Partial<GTFSFeed> = {}): GTFSFeed {
 }
 
 /**
- * The same footpaths indexed by the stop they leave from, as the loader gives them.
- */
-export function byOrigin(...transfers: Transfer[]): GTFSFeed["transfers"] {
-  const index: GTFSFeed["transfers"] = {};
-
-  for (const transfer of transfers) {
-    index[transfer.origin] ??= [];
-    index[transfer.origin].push(transfer);
-  }
-
-  return index;
-}
-
-/**
  * Stops that are platforms, each belonging to a station named by its stop_code. That is how the GB
- * rail feed identifies a station, and what the timetable resolves a call to.
+ * rail feed identifies a station, and what the loader resolves a call to.
  */
 export const platforms: Record<StopID, Stop> = {
   NRW: station("NRW"),
@@ -99,12 +104,61 @@ function platform(id: StopID, parentStation: StopID): Stop {
   return { id, latitude: 0, longitude: 0, locationType: 0, parentStation };
 }
 
+export function gtfsOf(overrides: Partial<GTFSFeed>): GtfsData {
+  return toGtfsData(feed(overrides));
+}
+
 /**
- * Plan over a feed with the query a caller would make.
+ * The connection of a trip between two stations, which a spec names rather than numbers.
+ */
+export function connection(gtfs: GtfsData, tripId: string, origin: StopID, destination: StopID): Connection {
+  const { connections, stopTable, trips } = gtfs;
+
+  for (let c = 0; c < connections.length; c++) {
+    if (
+      trips[connections.trip[c]].tripId === tripId &&
+      stopTable.nameOf(connections.departureStation[c]) === origin &&
+      stopTable.nameOf(connections.arrivalStation[c]) === destination
+    ) {
+      return c;
+    }
+  }
+
+  throw new Error(`No connection of ${tripId} from ${origin} to ${destination}`);
+}
+
+/**
+ * The footpath between two stations, as an index into the feed's transfers.
+ */
+export function transfer(gtfs: GtfsData, origin: StopID, destination: StopID): number {
+  const { transfers, stopTable } = gtfs;
+
+  for (let t = 0; t < transfers.transfer.length; t++) {
+    if (stopTable.nameOf(transfers.origin[t]) === origin && stopTable.nameOf(transfers.destination[t]) === destination) {
+      return t;
+    }
+  }
+
+  throw new Error(`No footpath from ${origin} to ${destination}`);
+}
+
+export function resultsFor(gtfs: GtfsData, origins: Record<StopID, Time>, destinations: StopID[] = []): ScanResults {
+  return new ScanResultsFactory(gtfs).create(origins, destinations);
+}
+
+/**
+ * Plan over a feed with the pieces a caller would wire together.
  */
 export function plan(overrides: Partial<GTFSFeed>, origins: StopID[], destinations: StopID[], time: Time): Journey[] {
-  return new DepartAfterQuery(createTimetable(feed(overrides)), [new MultipleCriteriaFilter()])
-    .plan(origins, destinations, TUESDAY, time);
+  return queryOver(gtfsOf(overrides)).plan(origins, destinations, TUESDAY, time);
+}
+
+export function queryOver(gtfs: GtfsData): DepartAfterQuery {
+  return new DepartAfterQuery(
+    new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs)),
+    new JourneyFactory(gtfs),
+    [new MultipleCriteriaFilter()]
+  );
 }
 
 /**

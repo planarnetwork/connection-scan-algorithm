@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
-import { loadGTFS } from "@gb-transit/gtfs-loader";
+import { ConnectionScanAlgorithm } from "../src/csa/ConnectionScanAlgorithm.js";
+import { ScanResultsFactory } from "../src/csa/ScanResultsFactory.js";
+import { loadGtfs } from "../src/gtfs/GtfsLoader.js";
+import { JourneyFactory } from "../src/journey/JourneyFactory.js";
 import { DepartAfterQuery } from "../src/query/DepartAfterQuery.js";
-import { createTimetable } from "../src/timetable/Timetable.js";
 
 const queries = [
     [["MRF", "LVC", "LVJ", "LIV"], ["NRW"]],
@@ -62,12 +64,11 @@ const queries = [
 
 async function run() {
     console.time("initial load");
-    const feed = await loadGTFS(fs.createReadStream(process.argv[2] || "gtfs.zip"));
+    const gtfs = await loadGtfs(fs.createReadStream(process.argv[2] || "gtfs.zip"));
     console.timeEnd("initial load");
 
-    console.time("timetable");
-    const query = new DepartAfterQuery(createTimetable(feed));
-    console.timeEnd("timetable");
+    const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+    const query = new DepartAfterQuery(csa, new JourneyFactory(gtfs));
 
     console.time("planning");
     const date = new Date();

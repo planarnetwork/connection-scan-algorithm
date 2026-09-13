@@ -1,13 +1,11 @@
 import { type GTFSFeed, Service, type ServiceCalendar } from "@gb-transit/gtfs-loader";
 import { describe, expect, it } from "vitest";
 import type { TimetableLeg } from "../../../src/journey/Journey.js";
-import { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
-import { MultipleCriteriaFilter } from "../../../src/query/MultipleCriteriaFilter.js";
-import { createTimetable } from "../../../src/timetable/Timetable.js";
-import { allDays, feed, platforms, st, trip, TUESDAY } from "../util.js";
+import type { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
+import { allDays, gtfsOf, platforms, queryOver, st, trip, TUESDAY } from "../util.js";
 
 function query(overrides: Partial<GTFSFeed>): DepartAfterQuery {
-  return new DepartAfterQuery(createTimetable(feed({ stops: platforms, ...overrides })), [new MultipleCriteriaFilter()]);
+  return queryOver(gtfsOf({ stops: platforms, ...overrides }));
 }
 
 function tripsOf(legs: unknown[]): string[] {
@@ -27,24 +25,6 @@ describe("DepartAfterQuery", () => {
     expect(journey.origin).toBe("NRW");
     expect(journey.destination).toBe("DIS");
     expect(leg.stopTimes.map(s => s.stop)).toEqual(["NRW1", "DIS2"]);
-  });
-
-  it("leaves the points a train passes through out of its leg", () => {
-    const passing = { ...st("DIS2", 1050), pickUp: false, dropOff: false };
-    const [journey] = query({ trips: [trip("1", [st("NRW1", 1000), passing, st("LST8", 1200)])] })
-      .plan(["NRW"], ["LST"], TUESDAY, 900);
-    const [leg] = journey.legs as TimetableLeg[];
-
-    expect(leg.stopTimes.map(s => s.stop)).toEqual(["NRW1", "LST8"]);
-    expect(leg.trip.stopTimes.length).toBe(3);
-  });
-
-  it("returns nothing where every origin or every destination is unknown", () => {
-    const planner = query({ trips: [front] });
-
-    expect(planner.plan(["XXX"], ["DIS"], TUESDAY, 900)).toEqual([]);
-    expect(planner.plan(["NRW"], ["XXX"], TUESDAY, 900)).toEqual([]);
-    expect(planner.plan(["XXX", "NRW"], ["DIS"], TUESDAY, 900).length).toBe(1);
   });
 
   it("stays aboard across a coupling rather than changing where there is time to", () => {

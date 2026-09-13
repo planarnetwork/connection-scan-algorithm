@@ -1,189 +1,134 @@
-import type { Time } from "@gb-transit/gtfs-loader";
-import { isTransferArrival, transferIndex } from "../csa/ConnectionScanAlgorithm.js";
-import { NOT_ARRIVED, type ScanResults } from "../csa/ScanResults.js";
-import type { StopIdx, Timetable } from "../timetable/Timetable.js";
+import { isCall, type StopID, type StopTime, type Time, type Trip } from "@gb-transit/gtfs-loader";
+import type { ConnectionIndex } from "../csa/ConnectionScanAlgorithm.js";
+import type { GtfsData } from "../gtfs/GtfsLoader.js";
+import { UNKNOWN_STOP } from "../gtfs/StopTable.js";
+import { type Connection, isChangeRequired, isTransferConnection, NO_CONNECTION, transferOf } from "./Connection.js";
 import { type AnyLeg, isTransfer, type Journey } from "./Journey.js";
 
 /**
- * A leg while it is still in the timetable's terms: a footpath by its index, or a trip between two of
- * its calls.
- */
-type Part = FootpathPart | TripPart;
-
-interface FootpathPart {
-  transfer: number;
-}
-
-interface TripPart {
-  trip: number;
-  /** Index into the timetable's calls of the call boarded at */
-  start: number;
-  /** Index into the timetable's calls of the call alighted at */
-  end: number;
-  origin: StopIdx;
-  destination: StopIdx;
-}
-
-const isFootpath = (part: Part): part is FootpathPart => "transfer" in part;
-
-/**
- * Creates journeys from the results of a connection scan.
+ * Creates journeys from the connection index created by the connection scan algorithm.
  */
 export class JourneyFactory {
 
+  /**
+   * Connections run between stations while a trip's stop times name platforms, so a leg is cut from
+   * its trip by asking which station each call is at.
+   */
   constructor(
-    private readonly timetable: Timetable
+    private readonly gtfs: GtfsData
   ) {}
 
   /**
    * Extract a result for each destination in the list.
    */
-  public getJourneys(results: ScanResults, destinations: StopIdx[]): Journey[] {
-    const journeys: Journey[] = [];
-
-    for (const destination of destinations) {
-      const parts = this.getParts(results, destination);
-
-      if (parts !== null) {
-        journeys.push(this.getJourney(this.getCompactedParts(parts).map(part => this.toLeg(part))));
-      }
-    }
-
-    return journeys;
+  public getJourneys(connections: ConnectionIndex, destinations: StopID[]): Journey[] {
+    return destinations
+      .map(d => this.getLegs(connections, d))
+      .filter((c): c is AnyLeg[] => c !== null)
+      .map(c => this.getCompactedLegs(c))
+      .map(l => this.getJourney(l));
   }
 
   /**
-   * Iterate backwards from the destination to the origin, collecting consecutive connections of one
-   * trip into a single part
+   * Iterate backwards from the destination to the origin collecting connections into legs
    */
-  private getParts(results: ScanResults, destination: StopIdx): Part[] | null {
-    const { connections, transfers } = this.timetable;
-    const parts: Part[] = [];
-    let station = destination;
+  private getLegs(connections: ConnectionIndex, destination: StopID): AnyLeg[] | null {
+    const legs: Connection[][] = [];
+    let legConnections: Connection[] = [];
+    let previousConnection: Connection = NO_CONNECTION;
+    let station = this.gtfs.stopTable.indexOf(destination);
 
-    while (results.arrivedBy[station] !== NOT_ARRIVED) {
-      const arrivedBy = results.arrivedBy[station];
+    while (station !== UNKNOWN_STOP && connections[station] !== NO_CONNECTION) {
+      const connection = connections[station];
 
-      if (isTransferArrival(arrivedBy)) {
-        const transfer = transferIndex(arrivedBy);
-
-        parts.push({ transfer });
-        station = transfers.origin[transfer];
+      if (previousConnection !== NO_CONNECTION && isChangeRequired(this.gtfs.connections, previousConnection, connection)) {
+        legs.push(legConnections.reverse());
+        legConnections = [];
       }
-      else {
-        const previous = parts[parts.length - 1];
-        const trip = connections.trip[arrivedBy];
 
-        station = connections.departureStation[arrivedBy];
-
-        if (previous !== undefined && !isFootpath(previous) && previous.trip === trip) {
-          previous.start = connections.board[arrivedBy];
-          previous.origin = station;
-        }
-        else {
-          parts.push({
-            trip,
-            start: connections.board[arrivedBy],
-            end: connections.alight[arrivedBy],
-            origin: station,
-            destination: connections.arrivalStation[arrivedBy]
-          });
-        }
-      }
+      legConnections.push(connection);
+      previousConnection = connection;
+      station = isTransferConnection(connection)
+        ? this.gtfs.transfers.origin[transferOf(connection)]
+        : this.gtfs.connections.departureStation[connection];
     }
 
-    return parts.length === 0 ? null : parts.reverse();
+    legs.push(legConnections.reverse());
+
+    return legConnections.length === 0 ? null : legs.reverse().map(cs => this.toLeg(cs));
   }
 
   /**
-   * Check for any redundant parts and replace them with the trip of a later one, boarded earlier.
+   * Convert a list of connections into a Transfer or a TimetableLeg
    */
-  private getCompactedParts(parts: Part[]): Part[] {
-    const { calls, transfers } = this.timetable;
-    const compacted: Part[] = [];
+  private toLeg(cs: Connection[]): AnyLeg {
+    const { connections, stopTable, transfers, trips } = this.gtfs;
+    const firstConnection = cs[0];
 
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const partI = parts[i];
+    if (isTransferConnection(firstConnection)) {
+      return transfers.transfer[transferOf(firstConnection)];
+    }
+    else {
+      const origin = stopTable.nameOf(connections.departureStation[firstConnection]);
+      const destination = stopTable.nameOf(connections.arrivalStation[cs[cs.length - 1]]);
+      const trip = trips[connections.trip[firstConnection]];
+      const stopTimes = this.getStopTimes(trip, origin, connections.departureTime[firstConnection], destination);
 
-      if (isFootpath(partI)) {
-        compacted.push(partI);
+      return { origin, destination, trip, stopTimes: stopTimes || [] };
+    }
+  }
+
+  /**
+   * Check for any redundant legs and replace them with new legs from the trip.
+   */
+  private getCompactedLegs(legs: AnyLeg[]): AnyLeg[] {
+    const newLegs: AnyLeg[] = [];
+
+    for (let i = legs.length - 1; i >= 0; i--) {
+      const legI = legs[i];
+
+      if (isTransfer(legI)) {
+        newLegs.push(legI);
       }
       else {
-        let lastDepartureTime = calls[partI.start].departureTime;
+        let lastDepartureTime = legI.stopTimes[0].departureTime;
 
         for (let j = i - 1; j >= 0; j--) {
-          const partJ = parts[j];
-          const origin = isFootpath(partJ) ? transfers.origin[partJ.transfer] : partJ.origin;
+          const legJ = legs[j];
+          lastDepartureTime = isTransfer(legJ) ? lastDepartureTime - legJ.duration : legJ.stopTimes[0].departureTime;
+          const stopTimes = this.getStopTimes(legI.trip, legJ.origin, lastDepartureTime, legI.destination);
 
-          lastDepartureTime = isFootpath(partJ)
-            ? lastDepartureTime - transfers.duration[partJ.transfer]
-            : calls[partJ.start].departureTime;
-
-          const start = this.findStart(partI.trip, origin, lastDepartureTime);
-          const end = start === -1 ? -1 : this.findEnd(partI.trip, start, partI.destination);
-
-          if (end !== -1) {
-            partI.origin = origin;
-            partI.start = start;
-            partI.end = end;
+          if (stopTimes) {
+            legI.origin = legJ.origin;
+            legI.stopTimes = stopTimes;
             i = j;
           }
         }
 
-        compacted.push(partI);
+        newLegs.push(legI);
       }
     }
 
-    return compacted.reverse();
+    return newLegs.reverse();
   }
 
   /**
-   * The first call of the trip at the station that can be boarded no earlier than the time
+   * Try to create a new leg from the trip, ensuring the new leg departs the origin no earlier than
+   * the given departure time. The stop times are the feed's own, so a leg between two stations still
+   * says which platform it uses at each end, but the points the trip only passes are left out.
    */
-  private findStart(trip: number, station: StopIdx, departureTime: Time): number {
-    const { callOffsets, calls, callStations } = this.timetable;
+  private getStopTimes(trip: Trip, origin: StopID, departureTime: Time, destination: StopID): StopTime[] | null {
+    const stopTimes = trip.stopTimes;
+    const start = stopTimes.findIndex(
+      c => c.pickUp && c.departureTime >= departureTime && this.stationOf(c) === origin
+    );
+    const end = stopTimes.findIndex((c, i) => c.dropOff && i > start && this.stationOf(c) === destination);
 
-    for (let k = callOffsets[trip]; k < callOffsets[trip + 1]; k++) {
-      if (callStations[k] === station && calls[k].pickUp && calls[k].departureTime >= departureTime) {
-        return k;
-      }
-    }
-
-    return -1;
+    return start === -1 || end === -1 ? null : stopTimes.slice(start, end + 1).filter(isCall);
   }
 
-  /**
-   * The first call of the trip after the one boarded that can be alighted at the station
-   */
-  private findEnd(trip: number, start: number, station: StopIdx): number {
-    const { callOffsets, calls, callStations } = this.timetable;
-
-    for (let k = start + 1; k < callOffsets[trip + 1]; k++) {
-      if (callStations[k] === station && calls[k].dropOff) {
-        return k;
-      }
-    }
-
-    return -1;
-  }
-
-  /**
-   * A part in the terms a journey is returned in. The stop times are the feed's own, so a leg between
-   * two stations still says which platform it uses at each end.
-   */
-  private toLeg(part: Part): AnyLeg {
-    const { stations, trips, calls, transfers } = this.timetable;
-
-    if (isFootpath(part)) {
-      return transfers.transfer[part.transfer];
-    }
-
-    return {
-      origin: stations[part.origin],
-      destination: stations[part.destination],
-      trip: trips[part.trip],
-      stopTimes: calls.slice(part.start, part.end + 1)
-    };
+  private stationOf(stopTime: StopTime): StopID {
+    return this.gtfs.stations.get(stopTime.stop) ?? stopTime.stop;
   }
 
   private getJourney(legs: AnyLeg[]): Journey {
