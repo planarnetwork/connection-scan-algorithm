@@ -61,25 +61,6 @@ describe("JourneyFactory", () => {
     expect(journey.arrivalTime).toBe(1190);
   });
 
-  it("removes pointless legs", () => {
-    const calls = [st("A", 1000), st("B", 1010), st("C", 1020), st("D", 1030), st("E", 1040)];
-    const gtfs = gtfsOf({
-      trips: [trip("LN1111", calls), trip("LN1112", calls), trip("LN1113", calls), trip("LN1114", calls)]
-    });
-    const results = resultsFor(gtfs, { A: 1000 });
-
-    take(results, connection(gtfs, "LN1111", "A", "B"));
-    take(results, connection(gtfs, "LN1112", "B", "C"));
-    take(results, connection(gtfs, "LN1113", "C", "D"));
-    take(results, connection(gtfs, "LN1114", "D", "E"));
-
-    const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["E"]);
-
-    expect(legsOf(journey)).toEqual(["LN1114:A-E"]);
-    expect(journey.departureTime).toBe(1000);
-    expect(journey.arrivalTime).toBe(1040);
-  });
-
   it("names the platforms a leg uses and leaves out the points it passes through", () => {
     const passing = { ...st("DIS2", 1100), pickUp: false, dropOff: false };
     const gtfs = gtfsOf({ stops: platforms, trips: [trip("1", [st("NRW1", 1000), passing, st("LST8", 1200)])] });

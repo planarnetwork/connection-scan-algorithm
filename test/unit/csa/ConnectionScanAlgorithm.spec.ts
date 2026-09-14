@@ -80,11 +80,9 @@ describe("ConnectionScanAlgorithm", () => {
   });
 
   /**
-   * In this scenario there are two trips running in parallel. Trip 1 arrives earliest at A, B and C and Trip 2 arrives
-   * earliest at D. It is not possible to change onto the second trip at C because of the interchange change, however
-   * the algorithm should detect that it was possible to board at A and add the connection. The list of connections
-   * will be incorrect as it will use trip 1 for A->B, B->C and then trip 2 for C->D. The results factory tidies this
-   * up by realising that the whole journey could be made on a single trip (trip 2).
+   * Two trips run in parallel. Trip 1 arrives earliest at B and C and trip 2 earliest at D. Trip 2
+   * cannot be changed onto at C in the interchange time, but it can be boarded at A, so the whole
+   * journey is made on it.
    */
   it("checks for connections missed because of interchange time", () => {
     const [journey] = plan({
