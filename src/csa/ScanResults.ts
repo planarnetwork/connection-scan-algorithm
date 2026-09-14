@@ -31,6 +31,10 @@ const NOT_BOARDABLE = 0;
  * at most that many legs, so a station's labels never get later as the legs go up, and a connection is
  * boarded from the fewest legs that are in time for it.
  *
+ * An origin's departure time is only its label of no legs. A train can be boarded there at that time,
+ * but walking out of it is charged the interchange time, so the origin may still be reached some other
+ * way in time to walk on sooner, and its other labels are left for that.
+ *
  * Stations are held by index, and connections and footpaths by their index into the feed's, so
  * every question the scan asks of this is a few array reads.
  */
@@ -73,7 +77,7 @@ export class ScanResults {
 
       if (origin !== UNKNOWN_STOP) {
         this.origins.push(origin);
-        this.boardingTimes.fill(origins[code], origin * this.levels, (origin + 1) * this.levels);
+        this.boardingTimes[origin * this.levels] = origins[code];
       }
     }
 
@@ -134,7 +138,7 @@ export class ScanResults {
     const row = this.connections.departureStation[c] * this.levels;
     const departureTime = this.connections.departureTime[c];
 
-    if (this.boardingTimes[row + this.maxLegs] > departureTime) {
+    if (this.boardingTimes[row + this.maxLegs] > departureTime && this.boardingTimes[row] > departureTime) {
       return NOT_BOARDABLE;
     }
 
@@ -168,10 +172,18 @@ export class ScanResults {
   private staysAboard(c: Connection, label: number): boolean {
     const current = this.connectionIndex[label];
 
-    return this.boardingTimes[label - 1] !== this.boardingTimes[label]
+    return this.isExactLegs(label)
       && current !== NO_CONNECTION
       && isChangeRequired(this.connections, current, c)
       && this.isReachableFromSameService(c);
+  }
+
+  /**
+   * The label was reached in as many legs as it is for, rather than as soon in fewer. A label of one
+   * leg always was: the only label of fewer is an origin's departure.
+   */
+  private isExactLegs(label: number): boolean {
+    return label % this.levels === 1 || this.boardingTimes[label - 1] !== this.boardingTimes[label];
   }
 
   /**
@@ -235,9 +247,13 @@ export class ScanResults {
 
   /**
    * The footpath, walked from the station reached in the legs, is still how its destination was reached
+   * in the legs after it. Where the label was reached as soon in fewer legs, it was walked on from in
+   * those, and walking on from it again in more could go back and forth between two stations.
    */
   public isReachedByTransfer(t: number, legs: number): boolean {
-    return this.connectionIndex[this.getTransferLabel(t, legs)] === transferConnection(t);
+    const label = this.getTransferLabel(t, legs);
+
+    return this.connectionIndex[label] === transferConnection(t) && this.isExactLegs(label);
   }
 
   /**
@@ -266,9 +282,11 @@ export class ScanResults {
     let latest = this.destinations.length === 0 ? -1 : 0;
 
     for (const destination of this.destinations) {
-      const boardingTime = this.boardingTimes[destination * this.levels + this.maxLegs];
+      const row = destination * this.levels;
+      const boardingTime = this.boardingTimes[row + this.maxLegs];
+      const arrival = boardingTime === NOT_REACHED ? NOT_REACHED : boardingTime - this.interchange[destination];
 
-      latest = Math.max(latest, boardingTime === NOT_REACHED ? NOT_REACHED : boardingTime - this.interchange[destination]);
+      latest = Math.max(latest, Math.min(arrival, this.boardingTimes[row]));
     }
 
     return latest;

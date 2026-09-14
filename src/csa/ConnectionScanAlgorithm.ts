@@ -88,8 +88,8 @@ export class ConnectionScanAlgorithm {
 /**
  * How each station was reached soonest in each number of legs. A station has a row of `levels` labels,
  * so the label of a station in some legs is at `station * levels + legs`: the soonest it was reached
- * in at most that many. The first label is the origins, reached in none, and the last holds that many
- * legs or more.
+ * in at most that many. The first label is the origins, reached in none, and the only label an origin's
+ * departure time is in. The last holds that many legs or more.
  */
 export interface ConnectionIndex {
   levels: number;

@@ -171,9 +171,9 @@ export function plan(overrides: Partial<GTFSFeed>, origins: StopID[], destinatio
   return queryOver(gtfsOf(overrides)).plan(origins, destinations, TUESDAY, time);
 }
 
-export function queryOver(gtfs: GtfsData): DepartAfterQuery {
+export function queryOver(gtfs: GtfsData, maxLegs?: number): DepartAfterQuery {
   return new DepartAfterQuery(
-    new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs)),
+    new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs, maxLegs)),
     new JourneyFactory(gtfs),
     [new MultipleCriteriaFilter()]
   );

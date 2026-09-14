@@ -5,8 +5,7 @@ import { NOT_REACHED } from "../../../src/csa/ScanResults.js";
 import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
 import { NO_CONNECTION } from "../../../src/journey/Connection.js";
 import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
-import { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
-import { allDays, byOrigin, connection, gtfsOf, labelOf, legsOf, pickUpOnly, plan, st, TUESDAY, trip, walk } from "../util.js";
+import { allDays, byOrigin, connection, gtfsOf, labelOf, legsOf, pickUpOnly, plan, queryOver, st, TUESDAY, trip, walk } from "../util.js";
 
 describe("ConnectionScanAlgorithm", () => {
 
@@ -291,11 +290,35 @@ describe("ConnectionScanAlgorithm", () => {
         trip("3", [st("C", 1040), st("D", 1050)])
       ]
     });
-    const query = new DepartAfterQuery(new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs, 1)), new JourneyFactory(gtfs));
-    const [journey] = query.plan(["A"], ["D"], TUESDAY, 900);
+    const [journey] = queryOver(gtfs, 1).plan(["A"], ["D"], TUESDAY, 900);
 
     expect(legsOf(journey)).toEqual(["1:A-B", "2:B-C", "3:C-D"]);
     expect(journey.arrivalTime).toBe(1050);
+  });
+
+  it("does not walk back and forth between an origin and a station no time away", () => {
+    const [journey] = plan({
+      trips: [trip("1", [st("B", 1000), st("C", 1100)])],
+      transfers: byOrigin(walk("A", "B", 0), walk("B", "A", 0))
+    }, ["A"], ["C"], 900);
+
+    expect(legsOf(journey)).toEqual(["walk:A-B", "1:B-C"]);
+  });
+
+  /**
+   * B sets off at 1001 and A at 1009, with ten minutes to change at A. Walking from B reaches A at
+   * 1006, so walking on from A can start at 1016 rather than 1019, in time for the train from E.
+   */
+  it("walks on through an origin reached from another before its interchange time is up", () => {
+    const gtfs = gtfsOf({
+      trips: [trip("1", [st("E", 1020), st("F", 1100)])],
+      transfers: byOrigin(walk("B", "A", 5), walk("A", "E", 3)),
+      interchange: { A: 10 }
+    });
+    const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
+    const [journey] = new JourneyFactory(gtfs).getJourneys(csa.scan({ A: 1009, B: 1001 }, ["F"], 20260908, 2), ["F"]);
+
+    expect(legsOf(journey)).toEqual(["walk:B-A", "walk:A-E", "1:E-F"]);
   });
 
 });
