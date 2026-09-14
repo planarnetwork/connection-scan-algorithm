@@ -1,5 +1,22 @@
 # connection-scan-algorithm
 
+## 3.0.1
+
+### Patch Changes
+
+- 28cd827: Return the journey the scan made. A journey could change trains at a station where another trip
+  happened to arrive first, with less than the station's interchange time, when the passenger had
+  really boarded that trip at an earlier call. The arrival times were right, the legs were not.
+  
+  The scan now records the connection each trip is boarded from, and the connection index holds that
+  connection for each station rather than the last connection into it, so each entry is one leg. A trip
+  that can be boarded at more than one call is boarded where the passenger has taken the fewest legs to
+  reach, then at the latest call, so a passenger is not taken past a call of the trip only to ride back
+  through it. Reaching a station at the same time in fewer legs now replaces how it was reached, and
+  the footpaths from it are walked again. Where the trip before still passes a later call of the next
+  one in time to change there, the journey changes there. `ScanResults.setConnection` has to follow
+  `isReachable` for the same connection, as the scan does.
+
 ## 3.0.0
 
 ### Major Changes
