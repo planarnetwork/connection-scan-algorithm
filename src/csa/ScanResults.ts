@@ -30,7 +30,6 @@ export class ScanResults {
   private readonly interchange: Int32Array;
   private readonly earliestArrivals: Int32Array;
   private readonly connectionIndex: ConnectionIndex;
-  /** How many legs the earliest arrival at each station takes, which decides where a trip is boarded */
   private readonly legs: Int32Array;
   private readonly origins: StopIdx[] = [];
   private readonly destinations: StopIdx[] = [];
