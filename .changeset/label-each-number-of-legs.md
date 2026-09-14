@@ -6,7 +6,8 @@ Return each destination's earliest arrival in the fewest legs. The scan kept one
 its earliest arrival, so an arrival a few minutes later in fewer legs was thrown away even when it
 made the same onward train, and every journey on from it took the extra legs. A station now keeps a
 label for each number of legs, up to `maxLegs` (8 unless `ScanResultsFactory` is given another, the
-last holding that many or more), and a trip is boarded from the fewest legs that are in time for it.
+last holding that many or more and keeping how many), and a trip is boarded from the fewest legs that
+are in time for it. With `maxLegs` of 1 the journeys are 3.0.1's.
 Over the GB rail benchmark queries the arrivals are unchanged and 172 of 5,643 journeys take fewer
 legs. `JourneyFactory` no longer rewrites the legs of a journey after the scan.
 

@@ -13,11 +13,12 @@ export class ScanResultsFactory {
   private readonly tripArrivals: Int32Array;
   private readonly tripBoardings: Int32Array;
   private readonly tripBoardingRanks: Int32Array;
+  private readonly lastLabelLegs: Int32Array;
 
   /**
    * Stations are labelled for each number of legs up to `maxLegs`, the last label holding that many
-   * or more. A journey of more legs is still found, but past it a journey in fewer legs is no longer
-   * told apart from a sooner one in more.
+   * or more. A journey of more legs is still found, and is still the earliest arrival in the fewest
+   * legs, but past `maxLegs` a later journey in fewer legs is not kept.
    */
   constructor(
     private readonly gtfs: GtfsData,
@@ -32,6 +33,7 @@ export class ScanResultsFactory {
     this.tripArrivals = new Int32Array(gtfs.trips.length);
     this.tripBoardings = new Int32Array(gtfs.trips.length);
     this.tripBoardingRanks = new Int32Array(gtfs.trips.length);
+    this.lastLabelLegs = new Int32Array(gtfs.stopTable.size);
   }
 
   /**
@@ -49,7 +51,8 @@ export class ScanResultsFactory {
       this.connectionIndex.fill(NO_CONNECTION),
       this.tripArrivals.fill(NOT_CARRIED),
       this.tripBoardings,
-      this.tripBoardingRanks
+      this.tripBoardingRanks,
+      this.lastLabelLegs
     );
   }
 

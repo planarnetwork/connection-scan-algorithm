@@ -66,8 +66,9 @@ A label per number of legs is what finds the journey with the fewest changes. An
 later in fewer legs can still make the same onward train, so a station keeps it alongside the sooner
 arrival, and a train is boarded from the fewest legs that are in time for it. `JourneyFactory`
 returns each destination's earliest arrival, in the fewest legs that arrive then. The labels go up to
-`maxLegs`, 8 unless `ScanResultsFactory` is given another, and the last holds that many legs or more,
-so a longer journey is still found.
+`maxLegs`, 8 unless `ScanResultsFactory` is given another. The last holds that many legs or more and
+keeps how many, so a longer journey is still found in the fewest legs that arrive as soon, but past
+`maxLegs` a later arrival in fewer legs is not kept.
 
 ### Stations and platforms
 

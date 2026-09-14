@@ -296,6 +296,18 @@ describe("ConnectionScanAlgorithm", () => {
     expect(journey.arrivalTime).toBe(1050);
   });
 
+  /**
+   * Eight trips of a stop each reach S8, where trip "long" is boarded through P to Q. Boarding it again
+   * at P takes a leg more than staying aboard, however many legs the labels go up to.
+   */
+  it.each([1, 2, 8])("stays aboard a trip rather than boarding it again with labels up to %i legs", maxLegs => {
+    const hops = Array.from({ length: 8 }, (_, i) => trip(`hop${i}`, [st(`S${i}`, 1000 + i * 20), st(`S${i + 1}`, 1010 + i * 20)]));
+    const gtfs = gtfsOf({ trips: [...hops, trip("long", [st("S8", 1200), st("P", 1210), st("Q", 1220)])] });
+    const [journey] = queryOver(gtfs, maxLegs).plan(["S0"], ["Q"], TUESDAY, 900);
+
+    expect(legsOf(journey).slice(-2)).toEqual(["hop7:S7-S8", "long:S8-Q"]);
+  });
+
   it("does not walk back and forth between an origin and a station no time away", () => {
     const [journey] = plan({
       trips: [trip("1", [st("B", 1000), st("C", 1100)])],
