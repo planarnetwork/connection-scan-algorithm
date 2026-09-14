@@ -147,6 +147,17 @@ export function resultsFor(gtfs: GtfsData, origins: Record<StopID, Time>, destin
 }
 
 /**
+ * Take a connection as the scan does, which is only once it has been found reachable.
+ */
+export function take(results: ScanResults, c: Connection): void {
+  if (!results.isReachable(c)) {
+    throw new Error(`Connection ${c} is not reachable`);
+  }
+
+  results.setConnection(c);
+}
+
+/**
  * Plan over a feed with the pieces a caller would wire together.
  */
 export function plan(overrides: Partial<GTFSFeed>, origins: StopID[], destinations: StopID[], time: Time): Journey[] {

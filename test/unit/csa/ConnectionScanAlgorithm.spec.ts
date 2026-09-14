@@ -129,6 +129,94 @@ describe("ConnectionScanAlgorithm", () => {
     expect(legsOf(journey)).toEqual(["1:A-D"]);
   });
 
+  /**
+   * Trip 2 reaches D before trip 3 does, but too late to change onto trip 3 there. The passenger
+   * boards trip 3 at B instead, and the journey has to say so rather than change at D.
+   */
+  it("boards a trip where the scan boarded it rather than where another trip arrived first", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1100)]),
+        trip("2", [st("A", 1050), st("D", 1125)]),
+        trip("3", [st("B", 1110), st("D", 1130), st("E", 1150)])
+      ],
+      interchange: { D: 600 }
+    }, ["A"], ["E"], 0);
+
+    expect(legsOf(journey)).toEqual(["1:A-B", "3:B-E"]);
+    expect(journey.arrivalTime).toBe(1150);
+  });
+
+  /**
+   * Trip 1 passes Q on its way to P, where trip 2 starts back through Q. Trip 2 could be boarded at
+   * either, but boarding it at P would ride from Q to P and straight back.
+   */
+  it("boards a trip at its latest call reached in as few legs rather than doubling back", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("X", 1000), st("Q", 1010), st("P", 1020)]),
+        trip("2", [st("P", 1030), st("Q", 1040), st("R", 1100)])
+      ]
+    }, ["X"], ["R"], 900);
+
+    expect(legsOf(journey)).toEqual(["1:X-Q", "2:Q-R"]);
+    expect(journey.arrivalTime).toBe(1100);
+  });
+
+  /**
+   * Trip 2 overtakes trip 1 and could be changed from at B, but that is a change trip 1 does not need.
+   */
+  it("does not board a trip later if reaching the later call takes more legs", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)]),
+        trip("2", [st("A", 1010), st("B", 1050)])
+      ]
+    }, ["A"], ["C"], 900);
+
+    expect(legsOf(journey)).toEqual(["1:A-C"]);
+  });
+
+  /**
+   * S is reached at the same time in three legs, then in one on trip c, and W is walked to from S.
+   * Trip d can be boarded at F, reached in three legs, or at W, which is only in two once the walk
+   * from S is taken again after trip c.
+   */
+  it("walks on again from a station reached at the same time in fewer legs", () => {
+    const [journey] = plan({
+      trips: [
+        trip("a", [st("O", 1000), st("M", 1010)]),
+        trip("a2", [st("M", 1020), st("N", 1030)]),
+        trip("b", [st("N", 1040), st("S", 1100)]),
+        trip("e", [st("N", 1040), st("F", 1100)]),
+        trip("c", [st("O", 1000), st("S", 1100)]),
+        trip("d", [st("F", 1150), st("W", 1200), st("T", 1300)])
+      ],
+      transfers: byOrigin(walk("S", "W", 60))
+    }, ["O"], ["T"], 900);
+
+    expect(legsOf(journey)).toEqual(["c:O-S", "walk:S-W", "d:W-T"]);
+    expect(journey.arrivalTime).toBe(1300);
+  });
+
+  /**
+   * X is reached earliest in two legs, but trip A passes it later in one on the way to Y, where trip
+   * B is boarded back through X. The passenger changes at X rather than riding to Y and back.
+   */
+  it("changes where the previous trip passed the next rather than riding on and back", () => {
+    const [journey] = plan({
+      trips: [
+        trip("P", [st("O", 1000), st("Q", 1005)]),
+        trip("R", [st("Q", 1006), st("X", 1010)]),
+        trip("A", [st("O", 1000), st("X", 1020), st("Y", 1030)]),
+        trip("B", [st("Y", 1040), st("X", 1050), st("Z", 1100)])
+      ]
+    }, ["O"], ["Z"], 900);
+
+    expect(legsOf(journey)).toEqual(["A:O-X", "B:X-Z"]);
+    expect(journey.arrivalTime).toBe(1100);
+  });
+
   it("gives each scan a connection index of its own", () => {
     const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] });
     const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
