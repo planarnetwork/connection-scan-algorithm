@@ -10,5 +10,7 @@ The scan now records the connection each trip is boarded from, and the connectio
 connection for each station rather than the last connection into it, so each entry is one leg. A trip
 that can be boarded at more than one call is boarded where the passenger has taken the fewest legs to
 reach, then at the latest call, so a passenger is not taken past a call of the trip only to ride back
-through it. `ScanResults.setConnection` has to follow `isReachable` for the same connection, as the
-scan does.
+through it. Reaching a station at the same time in fewer legs now replaces how it was reached, and
+the footpaths from it are walked again. Where the trip before still passes a later call of the next
+one in time to change there, the journey changes there. `ScanResults.setConnection` has to follow
+`isReachable` for the same connection, as the scan does.

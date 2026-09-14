@@ -55,9 +55,10 @@ export class ConnectionScanAlgorithm {
   }
 
   /**
-   * Walk every footpath out of a station whenever it is reached earlier than it was, not only the
-   * first time: a station first reached on foot is often then reached sooner by train, and the
-   * footpaths onwards from it have to start from the earlier time.
+   * Walk every footpath out of a station whenever it is reached earlier or in fewer legs than it
+   * was, not only the first time: a station first reached on foot is often then reached sooner by
+   * train, and the footpaths onwards from it have to start from the earlier time and count on from
+   * the fewer legs.
    */
   private scanTransfers(results: ScanResults, origin: StopIdx): void {
     for (let t = this.transfers.offsets[origin]; t < this.transfers.offsets[origin + 1]; t++) {

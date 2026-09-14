@@ -3,7 +3,7 @@ import type { ConnectionIndex } from "../csa/ConnectionScanAlgorithm.js";
 import type { GtfsData } from "../gtfs/GtfsLoader.js";
 import { type StopIdx, UNKNOWN_STOP } from "../gtfs/StopTable.js";
 import { type Connection, isTransferConnection, NO_CONNECTION, transferOf } from "./Connection.js";
-import { type AnyLeg, isTransfer, type Journey } from "./Journey.js";
+import { type AnyLeg, isTransfer, type Journey, type TimetableLeg } from "./Journey.js";
 
 /**
  * Creates journeys from the connection index created by the connection scan algorithm.
@@ -26,6 +26,7 @@ export class JourneyFactory {
       .map(d => this.getLegs(connections, d))
       .filter((c): c is AnyLeg[] => c !== null)
       .map(c => this.getCompactedLegs(c))
+      .map(c => this.getStraightenedLegs(c))
       .map(l => this.getJourney(l));
   }
 
@@ -100,6 +101,54 @@ export class JourneyFactory {
     }
 
     return newLegs.reverse();
+  }
+
+  /**
+   * The scan boards a trip at the call reached in the fewest legs, but only knows the legs of the
+   * earliest arrival at each call. The trip before may pass a later call of the next one after that
+   * earliest arrival, leaving the passenger riding on to where they board and back through it. Where
+   * there is time to change at such a call, the passenger changes there instead.
+   */
+  private getStraightenedLegs(legs: AnyLeg[]): AnyLeg[] {
+    for (let i = 1; i < legs.length; i++) {
+      const previous = legs[i - 1];
+      const next = legs[i];
+
+      if (!isTransfer(previous) && !isTransfer(next)) {
+        this.changeAtFirstSharedCall(previous, next);
+      }
+    }
+
+    return legs;
+  }
+
+  /**
+   * Cut the previous leg at the first call it sets down at that the next leg goes on to pick up at in
+   * time, and board the next leg there, so the whole of the ride on and back is left out.
+   */
+  private changeAtFirstSharedCall(previous: TimetableLeg, next: TimetableLeg): void {
+    for (let i = 1; i < previous.stopTimes.length - 1; i++) {
+      const alight = previous.stopTimes[i];
+
+      if (!alight.dropOff) {
+        continue;
+      }
+
+      const station = this.stationOf(alight);
+      const departureTime = alight.arrivalTime + (this.gtfs.interchange[this.gtfs.stopTable.indexOf(station)] ?? 0);
+      const board = next.stopTimes.findIndex((c, j) =>
+        j > 0 && j < next.stopTimes.length - 1 && c.pickUp && c.departureTime >= departureTime && this.stationOf(c) === station
+      );
+
+      if (board !== -1) {
+        previous.stopTimes = previous.stopTimes.slice(0, i + 1);
+        previous.destination = station;
+        next.stopTimes = next.stopTimes.slice(board);
+        next.origin = station;
+
+        return;
+      }
+    }
   }
 
   /**

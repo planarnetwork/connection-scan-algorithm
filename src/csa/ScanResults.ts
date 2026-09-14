@@ -122,17 +122,27 @@ export class ScanResults {
     return this.earliestArrivals[origin] + interchange <= this.connections.departureTime[c];
   }
 
+  /**
+   * Arriving at the same time is better in fewer legs, as the stations reached from here and the
+   * trips boarded here count their legs from it.
+   */
   public isBetter(c: Connection): boolean {
-    const arrivalTime = this.earliestArrivals[this.connections.arrivalStation[c]];
+    const destination = this.connections.arrivalStation[c];
+    const arrivalTime = this.earliestArrivals[destination];
 
-    return arrivalTime > this.connections.arrivalTime[c]
-      || (arrivalTime === this.connections.arrivalTime[c] && this.staysAboard(c));
+    if (arrivalTime !== this.connections.arrivalTime[c]) {
+      return arrivalTime > this.connections.arrivalTime[c];
+    }
+
+    const legs = this.legsTo(c);
+
+    return legs < this.legs[destination] || (legs === this.legs[destination] && this.staysAboard(c));
   }
 
   /**
-   * Arriving at the same time without changing is better than arriving on another trip. A vehicle
-   * that couples onto another runs as a trip of its own alongside both portions, so without this
-   * whichever of them was scanned first would have the passenger change at the coupling.
+   * Arriving at the same time in as many legs without changing is better than arriving on another
+   * trip. A vehicle that couples onto another runs as a trip of its own alongside both portions, so
+   * without this whichever of them was scanned first would have the passenger change at the coupling.
    */
   private staysAboard(c: Connection): boolean {
     const current = this.connectionIndex[this.connections.arrivalStation[c]];
@@ -143,22 +153,30 @@ export class ScanResults {
   }
 
   /**
-   * Returns true if the connection arrives earlier than the destination was reached before, rather
-   * than at the same time on a trip the passenger stays aboard
+   * Returns true if the connection reaches the destination earlier or in fewer legs than before,
+   * rather than at the same time in as many on a trip the passenger stays aboard
    */
   public setConnection(c: Connection): boolean {
     const destination = this.connections.arrivalStation[c];
     const previous = this.earliestArrivals[destination];
-    const boarding = this.tripBoardings[this.connections.trip[c]];
+    const previousLegs = this.legs[destination];
 
-    this.connectionIndex[destination] = boarding;
-    this.legs[destination] = this.legs[this.connections.departureStation[boarding]] + 1;
+    this.connectionIndex[destination] = this.tripBoardings[this.connections.trip[c]];
+    this.legs[destination] = this.legsTo(c);
 
-    return this.arrive(destination, this.connections.arrivalTime[c]) < previous;
+    return this.arrive(destination, this.connections.arrivalTime[c]) < previous || this.legs[destination] < previousLegs;
+  }
+
+  private legsTo(c: Connection): number {
+    return this.legs[this.connections.departureStation[this.tripBoardings[this.connections.trip[c]]]] + 1;
   }
 
   public isTransferBetter(t: number): boolean {
-    return this.earliestArrivals[this.transfers.destination[t]] > this.getTransferArrivalTime(t);
+    const destination = this.transfers.destination[t];
+    const arrivalTime = this.getTransferArrivalTime(t);
+
+    return this.earliestArrivals[destination] > arrivalTime
+      || (this.earliestArrivals[destination] === arrivalTime && this.legs[this.transfers.origin[t]] + 1 < this.legs[destination]);
   }
 
   public setTransfer(t: number): void {

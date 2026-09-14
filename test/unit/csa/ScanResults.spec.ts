@@ -97,13 +97,48 @@ describe("ScanResults", () => {
     });
     const results = resultsFor(parallel, { A: 900 });
 
-    results.setConnection(connection(parallel, "1", "A", "B"));
-    results.setConnection(connection(parallel, "2", "B", "C"));
+    take(results, connection(parallel, "1", "A", "B"));
+    take(results, connection(parallel, "2", "B", "C"));
 
     const alsoToC = connection(parallel, "3", "B", "C");
 
     expect(results.isReachable(alsoToC)).toBe(true);
     expect(results.isBetter(alsoToC)).toBe(false);
+  });
+
+  it("replaces a trip with another arriving at the same time in fewer legs", () => {
+    const shorter = gtfsOf({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1010)]),
+        trip("2", [st("B", 1020), st("C", 1100)]),
+        trip("3", [st("A", 1000), st("C", 1100)])
+      ]
+    });
+    const results = resultsFor(shorter, { A: 900 });
+
+    take(results, connection(shorter, "1", "A", "B"));
+
+    expect(results.isReachable(connection(shorter, "2", "B", "C"))).toBe(true);
+    expect(results.setConnection(connection(shorter, "2", "B", "C"))).toBe(true);
+
+    const direct = connection(shorter, "3", "A", "C");
+
+    expect(results.isReachable(direct)).toBe(true);
+    expect(results.isBetter(direct)).toBe(true);
+    expect(results.setConnection(direct)).toBe(true);
+  });
+
+  it("knows a transfer arriving at the same time in fewer legs is better", () => {
+    const walks = gtfsOf({
+      trips: [trip("1", [st("A", 1000), st("B", 1010)]), trip("2", [st("B", 1020), st("C", 1100)])],
+      transfers: byOrigin(walk("A", "C", 100))
+    });
+    const results = resultsFor(walks, { A: 1000 });
+
+    take(results, connection(walks, "1", "A", "B"));
+    take(results, connection(walks, "2", "B", "C"));
+
+    expect(results.isTransferBetter(transfer(walks, "A", "C"))).toBe(true);
   });
 
   it("does not count a passenger aboard at a call the trip only picks up at", () => {
