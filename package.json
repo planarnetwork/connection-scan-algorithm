@@ -1,6 +1,6 @@
 {
   "name": "connection-scan-algorithm",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Connection Scan Algorithm",
   "main": "./dist/cjs/index.js",
   "types": "./dist/esm/index.d.ts",
