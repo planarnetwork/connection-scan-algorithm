@@ -71,8 +71,8 @@ export class ConnectionScanAlgorithm {
 }
 
 /**
- * The connection or footpath that achieves the earliest arrival at each station, by station index,
- * or NO_CONNECTION where nothing does.
+ * How the earliest arrival at each station was made, by station index: the connection its trip was
+ * boarded from, or the footpath, or NO_CONNECTION where nothing reaches it. Each is one leg.
  */
 export type ConnectionIndex = Int32Array;
 

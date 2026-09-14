@@ -129,6 +129,24 @@ describe("ConnectionScanAlgorithm", () => {
     expect(legsOf(journey)).toEqual(["1:A-D"]);
   });
 
+  /**
+   * Trip 2 reaches D before trip 3 does, but too late to change onto trip 3 there. The passenger
+   * boards trip 3 at B instead, and the journey has to say so rather than change at D.
+   */
+  it("boards a trip where the scan boarded it rather than where another trip arrived first", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1100)]),
+        trip("2", [st("A", 1050), st("D", 1125)]),
+        trip("3", [st("B", 1110), st("D", 1130), st("E", 1150)])
+      ],
+      interchange: { D: 600 }
+    }, ["A"], ["E"], 0);
+
+    expect(legsOf(journey)).toEqual(["1:A-B", "3:B-E"]);
+    expect(journey.arrivalTime).toBe(1150);
+  });
+
   it("gives each scan a connection index of its own", () => {
     const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] });
     const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));

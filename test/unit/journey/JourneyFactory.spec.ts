@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TimetableLeg } from "../../../src/journey/Journey.js";
 import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
-import { byOrigin, connection, gtfsOf, legsOf, platforms, resultsFor, st, transfer, trip, walk } from "../util.js";
+import { byOrigin, connection, gtfsOf, legsOf, platforms, resultsFor, st, take, transfer, trip, walk } from "../util.js";
 
 describe("JourneyFactory", () => {
 
@@ -9,7 +9,7 @@ describe("JourneyFactory", () => {
     const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1030)])] });
     const results = resultsFor(gtfs, { A: 1000 });
 
-    results.setConnection(connection(gtfs, "1", "A", "B"));
+    take(results, connection(gtfs, "1", "A", "B"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["B"]);
 
@@ -34,7 +34,7 @@ describe("JourneyFactory", () => {
     const results = resultsFor(gtfs, { A: 1000 });
 
     results.setTransfer(transfer(gtfs, "A", "B"));
-    results.setConnection(connection(gtfs, "1", "B", "C"));
+    take(results, connection(gtfs, "1", "B", "C"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["C"]);
 
@@ -51,7 +51,7 @@ describe("JourneyFactory", () => {
     const results = resultsFor(gtfs, { A: 1000 });
 
     results.setTransfer(transfer(gtfs, "A", "B"));
-    results.setConnection(connection(gtfs, "1", "B", "C"));
+    take(results, connection(gtfs, "1", "B", "C"));
     results.setTransfer(transfer(gtfs, "C", "D"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["D"]);
@@ -68,10 +68,10 @@ describe("JourneyFactory", () => {
     });
     const results = resultsFor(gtfs, { A: 1000 });
 
-    results.setConnection(connection(gtfs, "LN1111", "A", "B"));
-    results.setConnection(connection(gtfs, "LN1112", "B", "C"));
-    results.setConnection(connection(gtfs, "LN1113", "C", "D"));
-    results.setConnection(connection(gtfs, "LN1114", "D", "E"));
+    take(results, connection(gtfs, "LN1111", "A", "B"));
+    take(results, connection(gtfs, "LN1112", "B", "C"));
+    take(results, connection(gtfs, "LN1113", "C", "D"));
+    take(results, connection(gtfs, "LN1114", "D", "E"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["E"]);
 
@@ -85,7 +85,7 @@ describe("JourneyFactory", () => {
     const gtfs = gtfsOf({ stops: platforms, trips: [trip("1", [st("NRW1", 1000), passing, st("LST8", 1200)])] });
     const results = resultsFor(gtfs, { NRW: 900 });
 
-    results.setConnection(connection(gtfs, "1", "NRW", "LST"));
+    take(results, connection(gtfs, "1", "NRW", "LST"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["LST"]);
     const leg = journey.legs[0] as TimetableLeg;

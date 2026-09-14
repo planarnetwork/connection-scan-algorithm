@@ -8,11 +8,13 @@ import { NOT_CARRIED, ScanResults } from "./ScanResults.js";
  */
 export class ScanResultsFactory {
   private readonly tripArrivals: Int32Array;
+  private readonly tripBoardings: Int32Array;
 
   constructor(
     private readonly gtfs: GtfsData
   ) {
     this.tripArrivals = new Int32Array(gtfs.trips.length);
+    this.tripBoardings = new Int32Array(gtfs.trips.length);
   }
 
   /**
@@ -20,7 +22,7 @@ export class ScanResultsFactory {
    * of the scan in progress can still be asked whether a connection is reachable.
    */
   public create(origins: OriginDepartureTimes, destinations: StopID[]): ScanResults {
-    return new ScanResults(this.gtfs, origins, destinations, this.tripArrivals.fill(NOT_CARRIED));
+    return new ScanResults(this.gtfs, origins, destinations, this.tripArrivals.fill(NOT_CARRIED), this.tripBoardings);
   }
 
 }

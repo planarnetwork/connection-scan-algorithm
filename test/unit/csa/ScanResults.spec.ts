@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ScanResults } from "../../../src/csa/ScanResults.js";
 import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
 import { transferConnection } from "../../../src/journey/Connection.js";
-import { byOrigin, connection, gtfsOf, pickUpOnly, resultsFor, st, transfer, trip, walk } from "../util.js";
+import { byOrigin, connection, gtfsOf, pickUpOnly, resultsFor, st, take, transfer, trip, walk } from "../util.js";
 
 describe("ScanResults", () => {
   const gtfs = gtfsOf({
@@ -153,11 +153,21 @@ describe("ScanResults", () => {
     const results = resultsFor(gtfs, { A: 900 });
     const [b, c] = ["B", "C"].map(code => gtfs.stopTable.indexOf(code));
 
-    results.setConnection(connection(gtfs, "LN1111", "A", "B"));
+    take(results, connection(gtfs, "LN1111", "A", "B"));
     results.setTransfer(transfer(gtfs, "B", "C"));
 
     expect(results.getConnectionIndex()[b]).toBe(connection(gtfs, "LN1111", "A", "B"));
     expect(results.getConnectionIndex()[c]).toBe(transferConnection(transfer(gtfs, "B", "C")));
+  });
+
+  it("indexes a station by the connection its trip was boarded from", () => {
+    const through = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1015), st("C", 1030)])] });
+    const results = resultsFor(through, { A: 900 });
+
+    take(results, connection(through, "1", "A", "B"));
+    take(results, connection(through, "1", "B", "C"));
+
+    expect(results.getConnectionIndex()[through.stopTable.indexOf("C")]).toBe(connection(through, "1", "A", "B"));
   });
 
   it("is finished once a connection arrives after every destination was reached", () => {

@@ -1,8 +1,8 @@
 import { isCall, type StopID, type StopTime, type Time, type Trip } from "@gb-transit/gtfs-loader";
 import type { ConnectionIndex } from "../csa/ConnectionScanAlgorithm.js";
 import type { GtfsData } from "../gtfs/GtfsLoader.js";
-import { UNKNOWN_STOP } from "../gtfs/StopTable.js";
-import { type Connection, isChangeRequired, isTransferConnection, NO_CONNECTION, transferOf } from "./Connection.js";
+import { type StopIdx, UNKNOWN_STOP } from "../gtfs/StopTable.js";
+import { type Connection, isTransferConnection, NO_CONNECTION, transferOf } from "./Connection.js";
 import { type AnyLeg, isTransfer, type Journey } from "./Journey.js";
 
 /**
@@ -30,49 +30,39 @@ export class JourneyFactory {
   }
 
   /**
-   * Iterate backwards from the destination to the origin collecting connections into legs
+   * Iterate backwards from the destination to the origin, each station giving the leg that reached it
    */
   private getLegs(connections: ConnectionIndex, destination: StopID): AnyLeg[] | null {
-    const legs: Connection[][] = [];
-    let legConnections: Connection[] = [];
-    let previousConnection: Connection = NO_CONNECTION;
+    const legs: AnyLeg[] = [];
     let station = this.gtfs.stopTable.indexOf(destination);
 
     while (station !== UNKNOWN_STOP && connections[station] !== NO_CONNECTION) {
       const connection = connections[station];
 
-      if (previousConnection !== NO_CONNECTION && isChangeRequired(this.gtfs.connections, previousConnection, connection)) {
-        legs.push(legConnections.reverse());
-        legConnections = [];
-      }
-
-      legConnections.push(connection);
-      previousConnection = connection;
+      legs.push(this.toLeg(connection, station));
       station = isTransferConnection(connection)
         ? this.gtfs.transfers.origin[transferOf(connection)]
         : this.gtfs.connections.departureStation[connection];
     }
 
-    legs.push(legConnections.reverse());
-
-    return legConnections.length === 0 ? null : legs.reverse().map(cs => this.toLeg(cs));
+    return legs.length === 0 ? null : legs.reverse();
   }
 
   /**
-   * Convert a list of connections into a Transfer or a TimetableLeg
+   * Convert the connection a trip was boarded from into a TimetableLeg to the station, or a footpath
+   * into a Transfer
    */
-  private toLeg(cs: Connection[]): AnyLeg {
+  private toLeg(connection: Connection, station: StopIdx): AnyLeg {
     const { connections, stopTable, transfers, trips } = this.gtfs;
-    const firstConnection = cs[0];
 
-    if (isTransferConnection(firstConnection)) {
-      return transfers.transfer[transferOf(firstConnection)];
+    if (isTransferConnection(connection)) {
+      return transfers.transfer[transferOf(connection)];
     }
     else {
-      const origin = stopTable.nameOf(connections.departureStation[firstConnection]);
-      const destination = stopTable.nameOf(connections.arrivalStation[cs[cs.length - 1]]);
-      const trip = trips[connections.trip[firstConnection]];
-      const stopTimes = this.getStopTimes(trip, origin, connections.departureTime[firstConnection], destination);
+      const origin = stopTable.nameOf(connections.departureStation[connection]);
+      const destination = stopTable.nameOf(station);
+      const trip = trips[connections.trip[connection]];
+      const stopTimes = this.getStopTimes(trip, origin, connections.departureTime[connection], destination);
 
       return { origin, destination, trip, stopTimes: stopTimes || [] };
     }

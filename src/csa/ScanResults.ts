@@ -34,13 +34,16 @@ export class ScanResults {
 
   /**
    * The trip arrivals are the earliest call each trip has carried the passenger to. They are only
-   * needed while the scan runs, so the factory gives every scan the same array.
+   * needed while the scan runs, so the factory gives every scan the same array. So are the trip
+   * boardings, the connection each trip was first reachable from, which are only read for a trip
+   * once it has carried the passenger and so need no clearing between scans.
    */
   constructor(
     gtfs: GtfsData,
     origins: OriginDepartureTimes,
     destinations: StopID[],
-    private readonly tripArrivals: Int32Array
+    private readonly tripArrivals: Int32Array,
+    private readonly tripBoardings: Int32Array
   ) {
     this.connections = gtfs.connections;
     this.transfers = gtfs.transfers;
@@ -81,6 +84,10 @@ export class ScanResults {
 
     if (reachable) {
       const trip = this.connections.trip[c];
+
+      if (this.tripArrivals[trip] === NOT_CARRIED) {
+        this.tripBoardings[trip] = c;
+      }
 
       this.tripArrivals[trip] = Math.min(this.tripArrivals[trip], this.connections.alight[c]);
     }
@@ -127,7 +134,7 @@ export class ScanResults {
     const destination = this.connections.arrivalStation[c];
     const previous = this.earliestArrivals[destination];
 
-    this.connectionIndex[destination] = c;
+    this.connectionIndex[destination] = this.tripBoardings[this.connections.trip[c]];
 
     return this.arrive(destination, this.connections.arrivalTime[c]) < previous;
   }
