@@ -187,6 +187,13 @@ export class ScanResults {
     this.arrive(destination, this.getTransferArrivalTime(t));
   }
 
+  /**
+   * The footpath is still how its destination was reached
+   */
+  public isReachedByTransfer(t: number): boolean {
+    return this.connectionIndex[this.transfers.destination[t]] === transferConnection(t);
+  }
+
   private getTransferArrivalTime(t: number): Time {
     const origin = this.transfers.origin[t];
 

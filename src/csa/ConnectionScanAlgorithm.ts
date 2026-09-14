@@ -59,11 +59,23 @@ export class ConnectionScanAlgorithm {
    * was, not only the first time: a station first reached on foot is often then reached sooner by
    * train, and the footpaths onwards from it have to start from the earlier time and count on from
    * the fewer legs.
+   *
+   * Every footpath out of the station is taken before any is walked on from. Walking on from each as
+   * it is taken would walk on from a station reached through a neighbour, only to reach it sooner
+   * directly and walk on from it all over again.
    */
   private scanTransfers(results: ScanResults, origin: StopIdx): void {
-    for (let t = this.transfers.offsets[origin]; t < this.transfers.offsets[origin + 1]; t++) {
+    const start = this.transfers.offsets[origin];
+    const end = this.transfers.offsets[origin + 1];
+
+    for (let t = start; t < end; t++) {
       if (results.isTransferBetter(t)) {
         results.setTransfer(t);
+      }
+    }
+
+    for (let t = start; t < end; t++) {
+      if (results.isReachedByTransfer(t)) {
         this.scanTransfers(results, this.transfers.destination[t]);
       }
     }

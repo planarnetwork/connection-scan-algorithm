@@ -169,6 +169,20 @@ describe("ScanResults", () => {
     expect(results.isTransferBetter(transfer(gtfs, "A", "C"))).toBe(false);
   });
 
+  it("knows whether a station is still reached by a transfer", () => {
+    const results = resultsFor(gtfs, { A: 900 });
+
+    results.setTransfer(transfer(gtfs, "A", "B"));
+    results.setTransfer(transfer(gtfs, "B", "C"));
+
+    expect(results.isReachedByTransfer(transfer(gtfs, "B", "C"))).toBe(true);
+    expect(results.isReachedByTransfer(transfer(gtfs, "A", "C"))).toBe(false);
+
+    results.setTransfer(transfer(gtfs, "A", "C"));
+
+    expect(results.isReachedByTransfer(transfer(gtfs, "B", "C"))).toBe(false);
+  });
+
   it("charges the interchange time at both ends of a transfer", () => {
     const walking = gtfsOf({
       trips: [trip("1", [st("A", 1000), st("B", 1015)]), trip("2", [st("C", 1574), st("D", 1700)]), trip("3", [st("C", 1575), st("D", 1700)])],
