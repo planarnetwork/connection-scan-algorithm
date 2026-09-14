@@ -14,6 +14,9 @@ export const NOT_REACHED = 0x7fffffff;
 /** The trip has carried the passenger to none of its calls */
 export const NOT_CARRIED = 0x7fffffff;
 
+/** More calls than any trip has, so that one fewer leg outranks any later call */
+const CALLS_PER_LEG = 0x10000;
+
 /**
  * Mutable object that stores the current earliest arrival and best connection indexes as the
  * connections are being scanned.
@@ -27,6 +30,8 @@ export class ScanResults {
   private readonly interchange: Int32Array;
   private readonly earliestArrivals: Int32Array;
   private readonly connectionIndex: ConnectionIndex;
+  /** How many legs the earliest arrival at each station takes, which decides where a trip is boarded */
+  private readonly legs: Int32Array;
   private readonly origins: StopIdx[] = [];
   private readonly destinations: StopIdx[] = [];
   private readonly isDestination: Uint8Array;
@@ -35,21 +40,23 @@ export class ScanResults {
   /**
    * The trip arrivals are the earliest call each trip has carried the passenger to. They are only
    * needed while the scan runs, so the factory gives every scan the same array. So are the trip
-   * boardings, the connection each trip was first reachable from, which are only read for a trip
-   * once it has carried the passenger and so need no clearing between scans.
+   * boardings, the connection each trip is boarded from, and their ranks. Those are only read for a
+   * trip once it has carried the passenger, so need no clearing between scans.
    */
   constructor(
     gtfs: GtfsData,
     origins: OriginDepartureTimes,
     destinations: StopID[],
     private readonly tripArrivals: Int32Array,
-    private readonly tripBoardings: Int32Array
+    private readonly tripBoardings: Int32Array,
+    private readonly tripBoardingRanks: Int32Array
   ) {
     this.connections = gtfs.connections;
     this.transfers = gtfs.transfers;
     this.interchange = gtfs.interchange;
     this.earliestArrivals = new Int32Array(gtfs.stopTable.size).fill(NOT_REACHED);
     this.connectionIndex = new Int32Array(gtfs.stopTable.size).fill(NO_CONNECTION);
+    this.legs = new Int32Array(gtfs.stopTable.size);
     this.isDestination = new Uint8Array(gtfs.stopTable.size);
 
     for (const code of Object.keys(origins)) {
@@ -78,21 +85,31 @@ export class ScanResults {
    * Once a trip has carried the passenger to a call, they are still aboard for any of its
    * connections from there on. Boarding it is not the same: a trip only picking up at a later call
    * has carried nobody to it.
+   *
+   * A trip that can be boarded at more than one call is boarded where the passenger has taken the
+   * fewest legs to reach, and after that at the latest call. Boarding at the earliest call would
+   * have a passenger who passed a later call of the trip on the way ride back through it. Both are
+   * folded into one rank, lower being better, and kept per trip so that comparing against the
+   * current boarding reads nothing from the connections.
    */
   public isReachable(c: Connection): boolean {
-    const reachable = this.isReachableWithChange(c) || this.isReachableFromSameService(c);
+    const trip = this.connections.trip[c];
 
-    if (reachable) {
-      const trip = this.connections.trip[c];
+    if (this.isReachableWithChange(c)) {
+      const rank = this.legs[this.connections.departureStation[c]] * CALLS_PER_LEG - this.connections.board[c];
 
-      if (this.tripArrivals[trip] === NOT_CARRIED) {
+      if (this.tripArrivals[trip] === NOT_CARRIED || rank < this.tripBoardingRanks[trip]) {
         this.tripBoardings[trip] = c;
+        this.tripBoardingRanks[trip] = rank;
       }
-
-      this.tripArrivals[trip] = Math.min(this.tripArrivals[trip], this.connections.alight[c]);
+    }
+    else if (!this.isReachableFromSameService(c)) {
+      return false;
     }
 
-    return reachable;
+    this.tripArrivals[trip] = Math.min(this.tripArrivals[trip], this.connections.alight[c]);
+
+    return true;
   }
 
   private isReachableFromSameService(c: Connection): boolean {
@@ -133,8 +150,10 @@ export class ScanResults {
   public setConnection(c: Connection): boolean {
     const destination = this.connections.arrivalStation[c];
     const previous = this.earliestArrivals[destination];
+    const boarding = this.tripBoardings[this.connections.trip[c]];
 
-    this.connectionIndex[destination] = this.tripBoardings[this.connections.trip[c]];
+    this.connectionIndex[destination] = boarding;
+    this.legs[destination] = this.legs[this.connections.departureStation[boarding]] + 1;
 
     return this.arrive(destination, this.connections.arrivalTime[c]) < previous;
   }
@@ -147,6 +166,7 @@ export class ScanResults {
     const destination = this.transfers.destination[t];
 
     this.connectionIndex[destination] = transferConnection(t);
+    this.legs[destination] = this.legs[this.transfers.origin[t]] + 1;
     this.arrive(destination, this.getTransferArrivalTime(t));
   }
 

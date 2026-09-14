@@ -147,6 +147,36 @@ describe("ConnectionScanAlgorithm", () => {
     expect(journey.arrivalTime).toBe(1150);
   });
 
+  /**
+   * Trip 1 passes Q on its way to P, where trip 2 starts back through Q. Trip 2 could be boarded at
+   * either, but boarding it at P would ride from Q to P and straight back.
+   */
+  it("boards a trip at its latest call reached in as few legs rather than doubling back", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("X", 1000), st("Q", 1010), st("P", 1020)]),
+        trip("2", [st("P", 1030), st("Q", 1040), st("R", 1100)])
+      ]
+    }, ["X"], ["R"], 900);
+
+    expect(legsOf(journey)).toEqual(["1:X-Q", "2:Q-R"]);
+    expect(journey.arrivalTime).toBe(1100);
+  });
+
+  /**
+   * Trip 2 overtakes trip 1 and could be changed from at B, but that is a change trip 1 does not need.
+   */
+  it("does not board a trip later if reaching the later call takes more legs", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)]),
+        trip("2", [st("A", 1010), st("B", 1050)])
+      ]
+    }, ["A"], ["C"], 900);
+
+    expect(legsOf(journey)).toEqual(["1:A-C"]);
+  });
+
   it("gives each scan a connection index of its own", () => {
     const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] });
     const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
