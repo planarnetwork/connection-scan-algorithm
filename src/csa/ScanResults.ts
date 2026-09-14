@@ -6,7 +6,7 @@ import { type Connection, isChangeRequired, NO_CONNECTION, transferConnection } 
 import type { ConnectionIndex, OriginDepartureTimes } from "./ConnectionScanAlgorithm.js";
 
 /**
- * Arrival time of a station that has not been reached. Larger than any real time, so it loses every
+ * Boarding time of a station that has not been reached. Larger than any real time, so it loses every
  * `<` comparison without needing a special case.
  */
 export const NOT_REACHED = 0x7fffffff;
@@ -14,12 +14,22 @@ export const NOT_REACHED = 0x7fffffff;
 /** The trip has carried the passenger to none of its calls */
 export const NOT_CARRIED = 0x7fffffff;
 
+const LEG_BITS = 16;
+
 /** More calls than any trip has, so that one fewer leg outranks any later call */
-const CALLS_PER_LEG = 0x10000;
+const CALLS_PER_LEG = 1 << LEG_BITS;
+
+/** The connection is not in time to be boarded from any label of its station */
+const NOT_BOARDABLE = 0;
 
 /**
- * Mutable object that stores the current earliest arrival and best connection indexes as the
- * connections are being scanned.
+ * Mutable object that stores how each station has been reached as the connections are being scanned.
+ *
+ * A station has a label for each number of legs rather than one for its earliest arrival: an arrival
+ * a few minutes later in fewer legs can still make the same onward trip, and the journey on from it
+ * then takes fewer legs. Each label is the soonest the passenger can board at the station having taken
+ * at most that many legs, so a station's labels never get later as the legs go up, and a connection is
+ * boarded from the fewest legs that are in time for it.
  *
  * Stations are held by index, and connections and footpaths by their index into the feed's, so
  * every question the scan asks of this is a few array reads.
@@ -28,24 +38,26 @@ export class ScanResults {
   private readonly connections: Connections;
   private readonly transfers: Transfers;
   private readonly interchange: Int32Array;
-  private readonly earliestArrivals: Int32Array;
-  private readonly connectionIndex: ConnectionIndex;
-  private readonly legs: Int32Array;
+  private readonly levels: number;
   private readonly origins: StopIdx[] = [];
   private readonly destinations: StopIdx[] = [];
   private readonly isDestination: Uint8Array;
   private latestDestinationArrival: Time;
 
   /**
-   * The trip arrivals are the earliest call each trip has carried the passenger to. They are only
-   * needed while the scan runs, so the factory gives every scan the same array. So are the trip
-   * boardings, the connection each trip is boarded from, and their ranks. Those are only read for a
-   * trip once it has carried the passenger, so need no clearing between scans.
+   * The labels' boarding times and connections are only needed while the scan runs and until its
+   * journeys are read, so the factory gives every scan the same arrays, filled afresh. So are the trip
+   * arrivals, the earliest call each trip has carried the passenger to, and the trip boardings, the
+   * connection each trip is boarded from, and their ranks. Those are only read for a trip once it has
+   * carried the passenger, so need no clearing between scans.
    */
   constructor(
     gtfs: GtfsData,
     origins: OriginDepartureTimes,
     destinations: StopID[],
+    private readonly maxLegs: number,
+    private readonly boardingTimes: Int32Array,
+    private readonly connectionIndex: Int32Array,
     private readonly tripArrivals: Int32Array,
     private readonly tripBoardings: Int32Array,
     private readonly tripBoardingRanks: Int32Array
@@ -53,9 +65,7 @@ export class ScanResults {
     this.connections = gtfs.connections;
     this.transfers = gtfs.transfers;
     this.interchange = gtfs.interchange;
-    this.earliestArrivals = new Int32Array(gtfs.stopTable.size).fill(NOT_REACHED);
-    this.connectionIndex = new Int32Array(gtfs.stopTable.size).fill(NO_CONNECTION);
-    this.legs = new Int32Array(gtfs.stopTable.size);
+    this.levels = maxLegs + 1;
     this.isDestination = new Uint8Array(gtfs.stopTable.size);
 
     for (const code of Object.keys(origins)) {
@@ -63,7 +73,7 @@ export class ScanResults {
 
       if (origin !== UNKNOWN_STOP) {
         this.origins.push(origin);
-        this.earliestArrivals[origin] = origins[code];
+        this.boardingTimes.fill(origins[code], origin * this.levels, (origin + 1) * this.levels);
       }
     }
 
@@ -93,9 +103,10 @@ export class ScanResults {
    */
   public isReachable(c: Connection): boolean {
     const trip = this.connections.trip[c];
+    const legs = this.getBoardingLegs(c);
 
-    if (this.isReachableWithChange(c)) {
-      const rank = this.legs[this.connections.departureStation[c]] * CALLS_PER_LEG - this.connections.board[c];
+    if (legs !== NOT_BOARDABLE) {
+      const rank = legs * CALLS_PER_LEG - this.connections.board[c];
 
       if (this.tripArrivals[trip] === NOT_CARRIED || rank < this.tripBoardingRanks[trip]) {
         this.tripBoardings[trip] = c;
@@ -115,106 +126,149 @@ export class ScanResults {
     return this.tripArrivals[this.connections.trip[c]] <= this.connections.board[c];
   }
 
-  private isReachableWithChange(c: Connection): boolean {
-    const origin = this.connections.departureStation[c];
-    const interchange = this.connectionIndex[origin] === NO_CONNECTION ? 0 : this.interchange[origin];
+  /**
+   * One leg more than the fewest the passenger can reach the connection's station in, in time for it.
+   * The last label holds that many legs or more, so boarding from it takes no more.
+   */
+  private getBoardingLegs(c: Connection): number {
+    const row = this.connections.departureStation[c] * this.levels;
+    const departureTime = this.connections.departureTime[c];
 
-    return this.earliestArrivals[origin] + interchange <= this.connections.departureTime[c];
+    if (this.boardingTimes[row + this.maxLegs] > departureTime) {
+      return NOT_BOARDABLE;
+    }
+
+    let legs = 0;
+
+    while (this.boardingTimes[row + legs] > departureTime) {
+      legs++;
+    }
+
+    return Math.min(legs + 1, this.maxLegs);
   }
 
   /**
-   * Arriving at the same time is better in fewer legs, as the stations reached from here and the
-   * trips boarded here count their legs from it.
+   * The connection reaches its station sooner than in as many legs before, or at the same time on a
+   * trip the passenger stays aboard.
    */
   public isBetter(c: Connection): boolean {
-    const destination = this.connections.arrivalStation[c];
-    const arrivalTime = this.earliestArrivals[destination];
+    const label = this.getLabel(c);
+    const boardingTime = this.getBoardingTime(c);
 
-    if (arrivalTime !== this.connections.arrivalTime[c]) {
-      return arrivalTime > this.connections.arrivalTime[c];
-    }
-
-    const legs = this.legsTo(c);
-
-    return legs < this.legs[destination] || (legs === this.legs[destination] && this.staysAboard(c));
+    return boardingTime < this.boardingTimes[label]
+      || (boardingTime === this.boardingTimes[label] && this.staysAboard(c, label));
   }
 
   /**
    * Arriving at the same time in as many legs without changing is better than arriving on another
    * trip. A vehicle that couples onto another runs as a trip of its own alongside both portions, so
    * without this whichever of them was scanned first would have the passenger change at the coupling.
+   * A label reached as soon in fewer legs is not one this trip got to in as many.
    */
-  private staysAboard(c: Connection): boolean {
-    const current = this.connectionIndex[this.connections.arrivalStation[c]];
+  private staysAboard(c: Connection, label: number): boolean {
+    const current = this.connectionIndex[label];
 
-    return current !== NO_CONNECTION
+    return this.boardingTimes[label - 1] !== this.boardingTimes[label]
+      && current !== NO_CONNECTION
       && isChangeRequired(this.connections, current, c)
       && this.isReachableFromSameService(c);
   }
 
   /**
-   * Returns true if the connection reaches the destination earlier or in fewer legs than before,
-   * rather than at the same time in as many on a trip the passenger stays aboard
+   * Returns the legs the connection reaches its station in if that is sooner than before, or 0 if it
+   * reaches it at the same time on a trip the passenger stays aboard
    */
-  public setConnection(c: Connection): boolean {
-    const destination = this.connections.arrivalStation[c];
-    const previous = this.earliestArrivals[destination];
-    const previousLegs = this.legs[destination];
+  public setConnection(c: Connection): number {
+    const legs = this.getLegs(c);
+    const station = this.connections.arrivalStation[c];
+    const boardingTime = this.getBoardingTime(c);
+    const isSooner = boardingTime < this.boardingTimes[station * this.levels + legs];
 
-    this.connectionIndex[destination] = this.tripBoardings[this.connections.trip[c]];
-    this.legs[destination] = this.legsTo(c);
+    this.reach(station, legs, boardingTime, this.tripBoardings[this.connections.trip[c]]);
 
-    return this.arrive(destination, this.connections.arrivalTime[c]) < previous || this.legs[destination] < previousLegs;
-  }
-
-  private legsTo(c: Connection): number {
-    return this.legs[this.connections.departureStation[this.tripBoardings[this.connections.trip[c]]]] + 1;
-  }
-
-  public isTransferBetter(t: number): boolean {
-    const destination = this.transfers.destination[t];
-    const arrivalTime = this.getTransferArrivalTime(t);
-
-    return this.earliestArrivals[destination] > arrivalTime
-      || (this.earliestArrivals[destination] === arrivalTime && this.legs[this.transfers.origin[t]] + 1 < this.legs[destination]);
-  }
-
-  public setTransfer(t: number): void {
-    const destination = this.transfers.destination[t];
-
-    this.connectionIndex[destination] = transferConnection(t);
-    this.legs[destination] = this.legs[this.transfers.origin[t]] + 1;
-    this.arrive(destination, this.getTransferArrivalTime(t));
+    return isSooner ? legs : 0;
   }
 
   /**
-   * The footpath is still how its destination was reached
+   * The legs of the trip's boarding: its rank rounded up to whole legs
    */
-  public isReachedByTransfer(t: number): boolean {
-    return this.connectionIndex[this.transfers.destination[t]] === transferConnection(t);
+  private getLegs(c: Connection): number {
+    return (this.tripBoardingRanks[this.connections.trip[c]] + CALLS_PER_LEG - 1) >> LEG_BITS;
   }
 
-  private getTransferArrivalTime(t: number): Time {
-    const origin = this.transfers.origin[t];
-
-    return this.earliestArrivals[origin] + this.transfers.duration[t] + this.interchange[origin];
+  private getLabel(c: Connection): number {
+    return this.connections.arrivalStation[c] * this.levels + this.getLegs(c);
   }
 
-  private arrive(station: StopIdx, time: Time): Time {
-    this.earliestArrivals[station] = time;
+  private getBoardingTime(c: Connection): Time {
+    return this.connections.arrivalTime[c] + this.interchange[this.connections.arrivalStation[c]];
+  }
+
+  /**
+   * Label the station as reached in the legs, and in every number of legs more that it was not
+   * reached sooner in
+   */
+  private reach(station: StopIdx, legs: number, boardingTime: Time, connection: Connection): void {
+    const end = (station + 1) * this.levels;
+
+    for (let label = station * this.levels + legs; label < end && this.boardingTimes[label] >= boardingTime; label++) {
+      this.boardingTimes[label] = boardingTime;
+      this.connectionIndex[label] = connection;
+    }
 
     if (this.isDestination[station] === 1) {
       this.latestDestinationArrival = this.getLatestDestinationArrival();
     }
+  }
 
-    return time;
+  /**
+   * The footpath, walked from the station reached in the legs, reaches its destination sooner than in
+   * as many legs before
+   */
+  public isTransferBetter(t: number, legs: number): boolean {
+    return this.getTransferBoardingTime(t, legs) < this.boardingTimes[this.getTransferLabel(t, legs)];
+  }
+
+  public setTransfer(t: number, legs: number): void {
+    this.reach(this.transfers.destination[t], this.getLegsAfterWalking(legs), this.getTransferBoardingTime(t, legs), transferConnection(t));
+  }
+
+  /**
+   * The footpath, walked from the station reached in the legs, is still how its destination was reached
+   */
+  public isReachedByTransfer(t: number, legs: number): boolean {
+    return this.connectionIndex[this.getTransferLabel(t, legs)] === transferConnection(t);
+  }
+
+  /**
+   * A footpath is a leg of its own
+   */
+  public getLegsAfterWalking(legs: number): number {
+    return Math.min(legs + 1, this.maxLegs);
+  }
+
+  private getTransferLabel(t: number, legs: number): number {
+    return this.transfers.destination[t] * this.levels + this.getLegsAfterWalking(legs);
+  }
+
+  /**
+   * A footpath is charged the interchange time at both ends. An origin's label has none in it, as a
+   * train can be boarded there without it, so walking from an origin adds it.
+   */
+  private getTransferBoardingTime(t: number, legs: number): Time {
+    const origin = this.transfers.origin[t];
+    const setOff = this.boardingTimes[origin * this.levels + legs] + (legs === 0 ? this.interchange[origin] : 0);
+
+    return setOff + this.transfers.duration[t] + this.interchange[this.transfers.destination[t]];
   }
 
   private getLatestDestinationArrival(): Time {
     let latest = this.destinations.length === 0 ? -1 : 0;
 
     for (const destination of this.destinations) {
-      latest = Math.max(latest, this.earliestArrivals[destination]);
+      const boardingTime = this.boardingTimes[destination * this.levels + this.maxLegs];
+
+      latest = Math.max(latest, boardingTime === NOT_REACHED ? NOT_REACHED : boardingTime - this.interchange[destination]);
     }
 
     return latest;
@@ -225,12 +279,12 @@ export class ScanResults {
   }
 
   public getConnectionIndex(): ConnectionIndex {
-    return this.connectionIndex;
+    return { levels: this.levels, boardingTimes: this.boardingTimes, connections: this.connectionIndex };
   }
 
   /**
    * Every destination has been reached before the connection arrives, so neither it nor any after
-   * it can arrive sooner, or at the same time on a trip the passenger is aboard.
+   * it can arrive sooner, or at the same time on a trip the passenger is aboard or in fewer legs.
    */
   public isFinished(c: Connection): boolean {
     return this.connections.arrivalTime[c] > this.latestDestinationArrival;

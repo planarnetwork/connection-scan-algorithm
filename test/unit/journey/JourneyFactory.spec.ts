@@ -33,7 +33,7 @@ describe("JourneyFactory", () => {
     });
     const results = resultsFor(gtfs, { A: 1000 });
 
-    results.setTransfer(transfer(gtfs, "A", "B"));
+    results.setTransfer(transfer(gtfs, "A", "B"), 0);
     take(results, connection(gtfs, "1", "B", "C"));
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["C"]);
@@ -50,9 +50,9 @@ describe("JourneyFactory", () => {
     });
     const results = resultsFor(gtfs, { A: 1000 });
 
-    results.setTransfer(transfer(gtfs, "A", "B"));
+    results.setTransfer(transfer(gtfs, "A", "B"), 0);
     take(results, connection(gtfs, "1", "B", "C"));
-    results.setTransfer(transfer(gtfs, "C", "D"));
+    results.setTransfer(transfer(gtfs, "C", "D"), 2);
 
     const [journey] = new JourneyFactory(gtfs).getJourneys(results.getConnectionIndex(), ["D"]);
 

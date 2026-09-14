@@ -55,11 +55,19 @@ The algorithm is the paper's: connections sorted by arrival, read in order, each
 be reached and gets somewhere sooner. What makes it quick is what it reads.
 
 `toGtfsData` numbers the stations, and holds the connections as parallel arrays of those numbers and
-times rather than as an object each. `ScanResults` keeps its earliest arrivals and the connection
-achieving each in arrays indexed by station, and a connection or footpath is its index, so every
+times rather than as an object each. `ScanResults` keeps a label for each station and number of legs:
+the soonest the station is reached in at most that many legs, and the connection achieving it. They
+are held in arrays indexed by station and legs, and a connection or footpath is its index, so every
 question the scan asks is a few array reads. A scan starts at the first connection arriving after the
 departure time and stops once every destination has been reached before the connection it is on
 arrives, and whether each trip runs is worked out once per date rather than asked of every connection.
+
+A label per number of legs is what finds the journey with the fewest changes. An arrival a few minutes
+later in fewer legs can still make the same onward train, so a station keeps it alongside the sooner
+arrival, and a train is boarded from the fewest legs that are in time for it. `JourneyFactory`
+returns each destination's earliest arrival, in the fewest legs that arrive then. The labels go up to
+`maxLegs`, 8 unless `ScanResultsFactory` is given another, and the last holds that many legs or more,
+so a longer journey is still found.
 
 ### Stations and platforms
 

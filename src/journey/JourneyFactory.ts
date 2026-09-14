@@ -19,11 +19,12 @@ export class JourneyFactory {
   ) {}
 
   /**
-   * Extract a result for each destination in the list.
+   * Extract a result for each destination in the list: its earliest arrival, in the fewest legs that
+   * arrive then.
    */
-  public getJourneys(connections: ConnectionIndex, destinations: StopID[]): Journey[] {
+  public getJourneys(index: ConnectionIndex, destinations: StopID[]): Journey[] {
     return destinations
-      .map(d => this.getLegs(connections, d))
+      .map(d => this.getLegs(index, d))
       .filter((c): c is AnyLeg[] => c !== null)
       .map(c => this.getCompactedLegs(c))
       .map(c => this.getStraightenedLegs(c))
@@ -31,22 +32,59 @@ export class JourneyFactory {
   }
 
   /**
-   * Iterate backwards from the destination to the origin, each station giving the leg that reached it
+   * Iterate backwards from the destination to the origin, each label giving the leg that reached it.
+   * The label before a leg is the fewest legs its station was reached in, in time for the leg: the
+   * label it was taken from, or one reached as soon in fewer legs since.
    */
-  private getLegs(connections: ConnectionIndex, destination: StopID): AnyLeg[] | null {
+  private getLegs(index: ConnectionIndex, destination: StopID): AnyLeg[] | null {
+    const { connections, transfers, interchange, stopTable } = this.gtfs;
+    const { levels, boardingTimes } = index;
     const legs: AnyLeg[] = [];
-    let station = this.gtfs.stopTable.indexOf(destination);
+    let station = stopTable.indexOf(destination);
 
-    while (station !== UNKNOWN_STOP && connections[station] !== NO_CONNECTION) {
-      const connection = connections[station];
+    if (station === UNKNOWN_STOP) {
+      return null;
+    }
+
+    let label = this.getLabel(index, station, boardingTimes[(station + 1) * levels - 1]);
+
+    while (index.connections[label] !== NO_CONNECTION) {
+      const connection = index.connections[label];
 
       legs.push(this.toLeg(connection, station));
-      station = isTransferConnection(connection)
-        ? this.gtfs.transfers.origin[transferOf(connection)]
-        : this.gtfs.connections.departureStation[connection];
+
+      if (isTransferConnection(connection)) {
+        const t = transferOf(connection);
+        const setOff = boardingTimes[label] - interchange[station] - transfers.duration[t];
+
+        station = transfers.origin[t];
+        label = this.getLabel(index, station, setOff);
+
+        // walking from an origin is charged the interchange time its label does not have in it
+        if (label % levels === 0 && boardingTimes[label] + interchange[station] > setOff) {
+          label = this.getLabel(index, station, setOff, 1);
+        }
+      }
+      else {
+        station = connections.departureStation[connection];
+        label = this.getLabel(index, station, connections.departureTime[connection]);
+      }
     }
 
     return legs.length === 0 ? null : legs.reverse();
+  }
+
+  /**
+   * The label of the fewest legs the station can be boarded at by the time in
+   */
+  private getLabel(index: ConnectionIndex, station: StopIdx, time: Time, fewestLegs = 0): number {
+    let label = station * index.levels + fewestLegs;
+
+    while (index.boardingTimes[label] > time) {
+      label++;
+    }
+
+    return label;
   }
 
   /**

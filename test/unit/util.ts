@@ -2,7 +2,7 @@ import {
   type GTFSFeed, Service, type ServiceCalendar, type Stop, type StopID, type StopTime, type Time, type Transfer,
   type Trip
 } from "@gb-transit/gtfs-loader";
-import { ConnectionScanAlgorithm } from "../../src/csa/ConnectionScanAlgorithm.js";
+import { type ConnectionIndex, ConnectionScanAlgorithm } from "../../src/csa/ConnectionScanAlgorithm.js";
 import type { ScanResults } from "../../src/csa/ScanResults.js";
 import { ScanResultsFactory } from "../../src/csa/ScanResultsFactory.js";
 import { type GtfsData, toGtfsData } from "../../src/gtfs/GtfsLoader.js";
@@ -140,6 +140,13 @@ export function transfer(gtfs: GtfsData, origin: StopID, destination: StopID): n
   }
 
   throw new Error(`No footpath from ${origin} to ${destination}`);
+}
+
+/**
+ * How the station was reached in at most the legs
+ */
+export function labelOf(index: ConnectionIndex, gtfs: GtfsData, station: StopID, legs: number): Connection {
+  return index.connections[gtfs.stopTable.indexOf(station) * index.levels + legs];
 }
 
 export function resultsFor(gtfs: GtfsData, origins: Record<StopID, Time>, destinations: StopID[] = []): ScanResults {

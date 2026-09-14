@@ -1,9 +1,12 @@
 import { Service } from "@gb-transit/gtfs-loader";
 import { describe, expect, it } from "vitest";
 import { ConnectionScanAlgorithm } from "../../../src/csa/ConnectionScanAlgorithm.js";
+import { NOT_REACHED } from "../../../src/csa/ScanResults.js";
 import { ScanResultsFactory } from "../../../src/csa/ScanResultsFactory.js";
 import { NO_CONNECTION } from "../../../src/journey/Connection.js";
-import { allDays, byOrigin, gtfsOf, legsOf, pickUpOnly, plan, st, trip, walk } from "../util.js";
+import { JourneyFactory } from "../../../src/journey/JourneyFactory.js";
+import { DepartAfterQuery } from "../../../src/query/DepartAfterQuery.js";
+import { allDays, byOrigin, connection, gtfsOf, labelOf, legsOf, pickUpOnly, plan, st, TUESDAY, trip, walk } from "../util.js";
 
 describe("ConnectionScanAlgorithm", () => {
 
@@ -217,17 +220,84 @@ describe("ConnectionScanAlgorithm", () => {
     expect(journey.arrivalTime).toBe(1100);
   });
 
-  it("gives each scan a connection index of its own", () => {
+  it("starts each scan with nothing reached", () => {
     const gtfs = gtfsOf({ trips: [trip("1", [st("A", 1000), st("B", 1100), st("C", 1200)])] });
     const csa = new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs));
-    const [a, b] = ["A", "B"].map(code => gtfs.stopTable.indexOf(code));
 
-    const fromA = csa.scan({ A: 900 }, ["C"], 20260908, 2);
+    csa.scan({ A: 900 }, ["C"], 20260908, 2);
+
     const fromB = csa.scan({ B: 900 }, ["C"], 20260908, 2);
 
-    expect(fromA[b]).not.toBe(NO_CONNECTION);
-    expect(fromB[a]).toBe(NO_CONNECTION);
-    expect(fromB[b]).toBe(NO_CONNECTION);
+    expect(labelOf(fromB, gtfs, "A", 8)).toBe(NO_CONNECTION);
+    expect(fromB.boardingTimes[gtfs.stopTable.indexOf("A") * fromB.levels + 8]).toBe(NOT_REACHED);
+    expect(labelOf(fromB, gtfs, "C", 1)).toBe(connection(gtfs, "1", "B", "C"));
+  });
+
+  /**
+   * Y is reached soonest in three legs, changing onto trip 3 at H, but trip 2 reaches it four minutes
+   * later in two, still in time for trip 4. S is reached at the same time either way.
+   */
+  it("changes where a later arrival in fewer legs still makes the next trip", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("M", 1050)]),
+        trip("2", [st("M", 1100), st("H", 1141), st("Y", 1241)]),
+        trip("3", [st("H", 1146), st("Y", 1237), st("E", 1322)]),
+        trip("4", [st("Y", 1252), st("E", 1334), st("S", 1410)])
+      ],
+      interchange: { M: 5, H: 5, Y: 5, E: 5, S: 5 }
+    }, ["A"], ["S"], 900);
+
+    expect(legsOf(journey)).toEqual(["1:A-M", "2:M-Y", "4:Y-S"]);
+    expect(journey.arrivalTime).toBe(1410);
+  });
+
+  /**
+   * S is reached soonest in two legs and a minute later in one, and both are in time to walk to W for
+   * trip d.
+   */
+  it("walks on from a station in each number of legs it is reached in", () => {
+    const [journey] = plan({
+      trips: [
+        trip("a", [st("O", 900), st("M", 950)]),
+        trip("b", [st("M", 955), st("S", 1000)]),
+        trip("c", [st("O", 900), st("S", 1010)]),
+        trip("d", [st("W", 1030), st("T", 1100)])
+      ],
+      transfers: byOrigin(walk("S", "W", 10))
+    }, ["O"], ["T"], 800);
+
+    expect(legsOf(journey)).toEqual(["c:O-S", "walk:S-W", "d:W-T"]);
+  });
+
+  /**
+   * Trip 2 reaches C first, scanned before trip 3 reaches it at the same time directly.
+   */
+  it("keeps scanning for a journey arriving as soon in fewer legs once a destination is reached", () => {
+    const [journey] = plan({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1010)]),
+        trip("2", [st("B", 1020), st("C", 1100)]),
+        trip("3", [st("A", 1000), st("C", 1100)])
+      ]
+    }, ["A"], ["C"], 900);
+
+    expect(legsOf(journey)).toEqual(["3:A-C"]);
+  });
+
+  it("finds a journey of more legs than it labels", () => {
+    const gtfs = gtfsOf({
+      trips: [
+        trip("1", [st("A", 1000), st("B", 1010)]),
+        trip("2", [st("B", 1020), st("C", 1030)]),
+        trip("3", [st("C", 1040), st("D", 1050)])
+      ]
+    });
+    const query = new DepartAfterQuery(new ConnectionScanAlgorithm(gtfs, new ScanResultsFactory(gtfs, 1)), new JourneyFactory(gtfs));
+    const [journey] = query.plan(["A"], ["D"], TUESDAY, 900);
+
+    expect(legsOf(journey)).toEqual(["1:A-B", "2:B-C", "3:C-D"]);
+    expect(journey.arrivalTime).toBe(1050);
   });
 
 });
